@@ -163,15 +163,25 @@ export const assignInstallationRep = async (req, res, next) => {
       throw new Error('Lead must be verified and transferred to Installation Team first');
     }
 
-    lead.installationRep = new mongoose.Types.ObjectId(String(installerId));
-    lead.installationStatus = 'assigned';
+    const installerObjectId = new mongoose.Types.ObjectId(String(installerId));
 
-    lead.remarks.push({
-      note: `[System] Lead assigned to Installer: ${targetUser.name}`,
-      addedBy: req.user._id
-    });
-
-    const updatedLead = await lead.save();
+    const updatedLead = await Lead.findByIdAndUpdate(
+      req.params.id,
+      {
+        $set: {
+          installationRep: installerObjectId,
+          installationStatus: 'assigned',
+        },
+        $push: {
+          remarks: {
+            note: `[System] Lead assigned to Installer: ${targetUser.name}`,
+            addedBy: req.user._id,
+            createdAt: new Date(),
+          }
+        }
+      },
+      { new: true, runValidators: true }
+    );
 
     res.status(200).json({
       status: 'success',
