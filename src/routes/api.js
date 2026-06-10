@@ -83,6 +83,7 @@ apiRouter.put('/accounts/leads/:id/payment', protect, restrictTo('superAdmin', '
 apiRouter.put('/accounts/leads/:id/tracking', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.updateTrackingId);
 apiRouter.put('/accounts/leads/:id/transfer', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.transferToInstallation);
 
+
 // --- Installation (Installation Panel) Routes ---
 apiRouter.get('/installation/dashboard', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.getInstallationDashboard);
 apiRouter.get('/installation/leads', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.getAssignedInstallationLeads);
