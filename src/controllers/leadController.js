@@ -181,27 +181,16 @@ export const getLeadById = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Access check:
-    // 1. Admins / Super Admins can access all leads
-    // 2. Accountants can access leads transferred to accounts
-    // 3. Installers can access leads assigned to them as installationRep
-    // 4. Other staff members (calling, sales) can access leads assigned to them as assignedTo
-    const isSpecialAccess = 
-      ['superAdmin', 'admin'].includes(req.user.role) ||
-      (req.user.role === 'accountant' && lead.transferredToAccounts === true) ||
-      (req.user.role === 'installation' && lead.installationRep?.toString() === req.user._id.toString()) ||
-      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString());
-
-    console.log('DEBUG:', {
-      userRole: req.user.role,
-      userId: req.user._id.toString(),
-      leadCreatedBy: lead.createdBy?.toString(),
-      leadAssignedTo: lead.assignedTo?.toString(),
-      isSpecialAccess,
-    });
-
+    const userId = req.user._id.toString();
     const assignedId = lead.assignedTo?._id ? lead.assignedTo._id.toString() : lead.assignedTo?.toString();
-    if (!isSpecialAccess && assignedId !== req.user._id.toString()) {
+    const hasAccess =
+      ['superAdmin', 'admin'].includes(req.user.role) ||
+      (req.user.role === 'crmuser' && lead.createdBy?.toString() === userId) ||
+      (req.user.role === 'accountant' && lead.transferredToAccounts === true) ||
+      (req.user.role === 'installation' && lead.installationRep?.toString() === userId) ||
+      assignedId === userId;
+
+    if (!hasAccess) {
       res.status(403);
       throw new Error('You do not have permission to access this lead');
     }
@@ -231,8 +220,11 @@ export const updateLead = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Access check
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.assignedTo?.toString() !== req.user._id.toString()) {
+    const canUpdate =
+      ['superAdmin', 'admin'].includes(req.user.role) ||
+      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      lead.assignedTo?.toString() === req.user._id.toString();
+    if (!canUpdate) {
       res.status(403);
       throw new Error('You do not have permission to update this lead');
     }
@@ -283,8 +275,11 @@ export const assignLead = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Access check: Staff members can only assign leads that are assigned to them
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.assignedTo?.toString() !== req.user._id.toString()) {
+    const canAssign =
+      ['superAdmin', 'admin'].includes(req.user.role) ||
+      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      lead.assignedTo?.toString() === req.user._id.toString();
+    if (!canAssign) {
       res.status(403);
       throw new Error('You do not have permission to assign this lead');
     }
@@ -338,8 +333,11 @@ export const addRemark = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Access check
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.assignedTo?.toString() !== req.user._id.toString()) {
+    const canRemark =
+      ['superAdmin', 'admin'].includes(req.user.role) ||
+      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      lead.assignedTo?.toString() === req.user._id.toString();
+    if (!canRemark) {
       res.status(403);
       throw new Error('You do not have permission to add remarks to this lead');
     }
@@ -421,8 +419,11 @@ export const updateSaleDetails = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Access check: non-admins can only modify leads assigned to them
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.assignedTo?.toString() !== req.user._id.toString()) {
+    const canModifySale =
+      ['superAdmin', 'admin'].includes(req.user.role) ||
+      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      lead.assignedTo?.toString() === req.user._id.toString();
+    if (!canModifySale) {
       res.status(403);
       throw new Error('You do not have permission to modify this lead');
     }
@@ -465,8 +466,11 @@ export const uploadSaleDocuments = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Access check
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.assignedTo?.toString() !== req.user._id.toString()) {
+    const canUploadDoc =
+      ['superAdmin', 'admin'].includes(req.user.role) ||
+      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      lead.assignedTo?.toString() === req.user._id.toString();
+    if (!canUploadDoc) {
       res.status(403);
       throw new Error('You do not have permission to modify this lead');
     }
@@ -504,8 +508,11 @@ export const transferToAccounts = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Access check
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.assignedTo?.toString() !== req.user._id.toString()) {
+    const canTransfer =
+      ['superAdmin', 'admin'].includes(req.user.role) ||
+      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      lead.assignedTo?.toString() === req.user._id.toString();
+    if (!canTransfer) {
       res.status(403);
       throw new Error('You do not have permission to modify this lead');
     }
@@ -546,8 +553,11 @@ export const updateDeliveryStatus = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Access check
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.assignedTo?.toString() !== req.user._id.toString()) {
+    const canUpdateDelivery =
+      ['superAdmin', 'admin'].includes(req.user.role) ||
+      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      lead.assignedTo?.toString() === req.user._id.toString();
+    if (!canUpdateDelivery) {
       res.status(403);
       throw new Error('You do not have permission to modify this lead');
     }
