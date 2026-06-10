@@ -150,11 +150,10 @@ export const changePassword = async (req, res, next) => {
     }
 
     // Try finding in Admins
-    let account = await Admin.findById(req.user.id).select('+password');
+    let account = await Admin.findById(req.user._id).select('+password');
 
-    // Try finding in Users if not in Admins
     if (!account) {
-      account = await User.findById(req.user.id).select('+password');
+      account = await User.findById(req.user._id).select('+password');
     }
 
     if (!account) {

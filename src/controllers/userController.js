@@ -464,11 +464,9 @@ export const registerFcmToken = async (req, res, next) => {
       throw new Error('Please provide an FCM token');
     }
 
-    const user = req.user;
-    if (!user.fcmTokens.includes(token)) {
-      user.fcmTokens.push(token);
-      await user.save();
-    }
+    const isAdmin = ['superAdmin', 'admin'].includes(req.user.role);
+    const Model = isAdmin ? Admin : User;
+    await Model.findByIdAndUpdate(req.user._id, { fcmToken: token });
 
     res.status(200).json({
       status: 'success',
