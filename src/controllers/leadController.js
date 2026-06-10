@@ -37,7 +37,7 @@ export const createLead = async (req, res, next) => {
 
     // Set assignedTo: if not provided and requester is a staff member, default to themselves.
     let finalAssignedTo = assignedTo;
-    if (!finalAssignedTo && !['superAdmin', 'admin'].includes(req.user.role)) {
+    if (!finalAssignedTo && !['superAdmin', 'admin', 'crmuser'].includes(req.user.role)) {
       finalAssignedTo = req.user._id;
     }
 
