@@ -549,6 +549,8 @@ export const transferToAccounts = async (req, res, next) => {
     // Set status to converted and transferredToAccounts to true
     lead.status = 'converted';
     lead.transferredToAccounts = true;
+    lead.saleConfirmedAt = new Date();
+    if (req.body.dealValue !== undefined) lead.dealValue = req.body.dealValue;
 
     // Add remark entry
     lead.remarks.push({

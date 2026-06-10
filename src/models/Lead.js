@@ -123,6 +123,12 @@ const leadSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    saleConfirmedAt: {
+      type: Date,
+    },
+    saleConfirmedAt: {
+      type: Date,
+    },
     deliveryStatus: {
       type: String,
       enum: ['pending', 'in_progress', 'delivered'],
