@@ -195,9 +195,10 @@ export const verifySale = async (req, res, next) => {
       addedBy: req.user._id
     });
 
-    // If rejected, send back to sales team (set status back to assigned so they can handle it)
+    // If rejected, send back to sales team
     if (verificationStatus === 'rejected') {
       lead.status = 'assigned';
+      lead.transferredToAccounts = false; // Remove from accounts panel so sales team can handle it
     }
 
     const updatedLead = await lead.save();
@@ -361,6 +362,7 @@ export const transferToInstallation = async (req, res, next) => {
     }
 
     lead.transferredToInstallation = true;
+    lead.status = 'in_process'; // Mark as in-process so superadmin can track it's with installation
 
     // Add remark entry
     lead.remarks.push({

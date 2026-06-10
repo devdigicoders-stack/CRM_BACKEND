@@ -217,11 +217,16 @@ export const updateInstallationStatus = async (req, res, next) => {
       throw new Error('You do not have permission to modify this installation');
     }
 
-    lead.installationStatus = status.toLowerCase();
+    const normalizedStatus = status.toLowerCase();
+    lead.installationStatus = normalizedStatus;
     if (progressRemarks) lead.installationProgressRemarks = progressRemarks;
 
+    // Sync main lead status with installation status
+    if (normalizedStatus === 'in_progress') lead.status = 'in_process';
+    else if (normalizedStatus === 'completed') lead.status = 'closed';
+
     lead.remarks.push({
-      note: `[Installation Team] Status updated to: ${status.toUpperCase()}. Progress: ${progressRemarks || 'None'}`,
+      note: `[Installation Team] Status updated to: ${normalizedStatus.toUpperCase()}. Progress: ${progressRemarks || 'None'}`,
       addedBy: req.user._id
     });
 
