@@ -33,7 +33,7 @@ apiRouter.post('/leads', protect, checkPermission('leads'), leadController.creat
 apiRouter.get('/leads', protect, checkPermission('leads'), leadController.getLeads);
 apiRouter.get('/leads/:id', protect, checkPermission('leads'), leadController.getLeadById);
 apiRouter.put('/leads/:id', protect, checkPermission('leads'), leadController.updateLead);
-apiRouter.put('/leads/:id/assign', protect, restrictTo('superAdmin', 'admin', 'calling'), checkPermission('leads'), leadController.assignLead);
+apiRouter.put('/leads/:id/assign', protect, restrictTo('superAdmin', 'admin', 'calling', 'crmuser'), checkPermission('leads'), leadController.assignLead);
 apiRouter.post('/leads/:id/remarks', protect, checkPermission('leads'), leadController.addRemark);
 apiRouter.put('/leads/:id/sale-details', protect, checkPermission('leads'), leadController.updateSaleDetails);
 apiRouter.put('/leads/:id/sale-documents', protect, checkPermission('leads'), leadController.uploadAgreementMiddleware, leadController.uploadSaleDocuments);

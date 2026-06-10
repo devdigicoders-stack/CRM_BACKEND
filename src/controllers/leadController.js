@@ -286,7 +286,7 @@ export const assignLead = async (req, res, next) => {
       throw new Error('You do not have permission to assign this lead');
     }
 
-    // Role check for calling representatives (can only transfer to sales panel)
+    // calling rep can only assign to sales, crmuser can assign to anyone
     if (req.user.role === 'calling' && targetUser.role !== 'sales') {
       res.status(400);
       throw new Error('Calling representatives can only assign leads to the Sales Panel representatives');
