@@ -86,7 +86,7 @@ apiRouter.put('/accounts/leads/:id/transfer', protect, restrictTo('superAdmin', 
 // --- Installation (Installation Panel) Routes ---
 apiRouter.get('/installation/dashboard', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.getInstallationDashboard);
 apiRouter.get('/installation/leads', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.getAssignedInstallationLeads);
-apiRouter.put('/installation/leads/:id/assign-rep', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('installation'), installationController.assignInstallationRep);
+apiRouter.put('/installation/leads/:id/assign-rep', protect, restrictTo('superAdmin', 'admin', 'accountant'), installationController.assignInstallationRep);
 apiRouter.put('/installation/leads/:id/status', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.updateInstallationStatus);
 apiRouter.put('/installation/leads/:id/proof', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.uploadProofMiddleware, installationController.uploadInstallationProof);
 apiRouter.put('/installation/leads/:id/issue', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.reportInstallationIssue);
