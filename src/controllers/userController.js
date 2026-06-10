@@ -64,6 +64,26 @@ export const createUser = async (req, res, next) => {
   }
 };
 
+// @desc    Get sales users list (for lead assignment dropdown)
+// @route   GET /api/v1/users/sales-list
+// @access  Private (all logged in users)
+export const getSalesUsers = async (req, res, next) => {
+  try {
+    const users = await User.find({ role: 'sales', active: true })
+      .select('name email phone role')
+      .sort({ name: 1 })
+      .lean();
+
+    res.status(200).json({
+      status: 'success',
+      results: users.length,
+      data: { users },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Get a single user by ID
 // @route   GET /api/v1/users/:id
 // @access  Private (Super Admin and Admin only)

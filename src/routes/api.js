@@ -25,6 +25,9 @@ apiRouter.post('/auth/logout', authController.logout);
 apiRouter.get('/profile', protect, authController.getProfile);
 apiRouter.put('/profile', protect, authController.uploadProfilePicMiddleware, authController.updateProfile);
 
+// --- Sales Users List (for assignment dropdown - accessible by all) ---
+apiRouter.get('/users/sales-list', protect, userController.getSalesUsers);
+
 // --- Lead Routes ---
 apiRouter.post('/leads', protect, checkPermission('leads'), leadController.createLead);
 apiRouter.get('/leads', protect, checkPermission('leads'), leadController.getLeads);
