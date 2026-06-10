@@ -90,11 +90,12 @@ export const getLeads = async (req, res, next) => {
     const query = {};
 
     // 1) Security constraint: Staff representatives can only see their assigned leads
-    if (!['superAdmin', 'admin'].includes(req.user.role)) {
+    if (['superAdmin', 'admin'].includes(req.user.role)) {
+      if (assignedTo) query.assignedTo = assignedTo;
+    } else if (req.user.role === 'crmuser') {
+      query.createdBy = req.user._id;
+    } else {
       query.assignedTo = req.user._id;
-    } else if (assignedTo) {
-      // Managers can filter by assignee
-      query.assignedTo = assignedTo;
     }
 
     // 2) Search parameter (matches name, phone, or email via regex)
