@@ -171,6 +171,7 @@ export const assignInstallationRep = async (req, res, next) => {
         $set: {
           installationRep: installerObjectId,
           installationStatus: 'assigned',
+          transferredToInstallation: true,
         },
         $push: {
           remarks: {

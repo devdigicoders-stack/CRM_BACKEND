@@ -302,9 +302,14 @@ export const assignLead = async (req, res, next) => {
 
     // Update assignment
     lead.assignedTo = userId;
-    
-    // Automatically change status to assigned
     lead.status = 'assigned';
+
+    // If assigning to installation role, set installation fields too
+    if (targetUser.role === 'installation') {
+      lead.installationRep = userId;
+      lead.transferredToInstallation = true;
+      lead.installationStatus = 'assigned';
+    }
 
     // Add audit remark
     lead.remarks.push({
