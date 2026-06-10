@@ -22,19 +22,19 @@ export const getDashboardStats = async (req, res, next) => {
   try {
     const query = {};
 
-    // If staff user, restrict metrics to their own assigned leads
-    if (!['superAdmin', 'admin'].includes(req.user.role)) {
+    // If staff user, restrict metrics to their own leads
+    if (req.user.role === 'crmuser') {
+      query.createdBy = req.user._id;
+    } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
 
     const isAdmin = ['superAdmin', 'admin'].includes(req.user.role);
 
     // Dates for today
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
+    const now = new Date();
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const endOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
 
     // 1) Total Leads Count
     const totalLeads = await Lead.countDocuments(query);
@@ -161,24 +161,30 @@ export const getTodayReminders = async (req, res, next) => {
   try {
     const query = {};
 
-    if (!['superAdmin', 'admin'].includes(req.user.role)) {
+    if (req.user.role === 'crmuser') {
+      query.createdBy = req.user._id;
+    } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
 
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
+    const now = new Date();
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const endOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
 
     query.followUpDate = {
       $gte: startOfToday,
       $lte: endOfToday,
     };
 
+    console.log('DEBUG today reminders query:', JSON.stringify(query));
+    console.log('DEBUG user:', req.user._id, req.user.role);
+    console.log('DEBUG startOfToday:', startOfToday, 'endOfToday:', endOfToday);
+
     const leads = await Lead.find(query)
       .populate('assignedTo', 'name email role')
       .sort({ followUpDate: 1 });
+
+    console.log('DEBUG leads found:', leads.length);
 
     const formattedLeads = leads.map(formatLeadWithIntegrations);
 
@@ -201,12 +207,14 @@ export const getMissedFollowUps = async (req, res, next) => {
   try {
     const query = {};
 
-    if (!['superAdmin', 'admin'].includes(req.user.role)) {
+    if (req.user.role === 'crmuser') {
+      query.createdBy = req.user._id;
+    } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
 
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    const nowM = new Date();
+    const startOfToday = new Date(Date.UTC(nowM.getUTCFullYear(), nowM.getUTCMonth(), nowM.getUTCDate(), 0, 0, 0, 0));
 
     query.followUpDate = { $lt: startOfToday };
     query.status = { $nin: ['converted', 'closed'] };
