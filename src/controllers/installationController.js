@@ -1,6 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import mongoose from 'mongoose';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
 
@@ -32,10 +33,9 @@ const fileFilter = (req, file, cb) => {
 export const uploadProofMiddleware = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+  limits: { fileSize: 10 * 1024 * 1024 }
 }).single('proof');
 
-// Helper to format lead response with helper integration links
 const formatLeadWithIntegrations = (lead) => {
   const leadObj = lead.toObject ? lead.toObject() : lead;
   const cleanedPhone = leadObj.phone.replace(/\D/g, '');
@@ -57,38 +57,20 @@ export const getInstallationDashboard = async (req, res, next) => {
   try {
     const query = { transferredToInstallation: true };
 
-    // Limit to the logged-in installer if not an admin
     if (!['superAdmin', 'admin'].includes(req.user.role)) {
-      query.installationRep = req.user._id;
+      query.installationRep = new mongoose.Types.ObjectId(String(req.user._id));
     } else {
       query.installationRep = { $exists: true, $ne: null };
     }
 
     const totalAssigned = await Lead.countDocuments(query);
-    
-    const inProgress = await Lead.countDocuments({
-      ...query,
-      installationStatus: 'in_progress'
-    });
-
-    const completed = await Lead.countDocuments({
-      ...query,
-      installationStatus: 'completed'
-    });
-
-    const issuesReported = await Lead.countDocuments({
-      ...query,
-      installationIssueReported: true
-    });
+    const inProgress = await Lead.countDocuments({ ...query, installationStatus: 'in_progress' });
+    const completed = await Lead.countDocuments({ ...query, installationStatus: 'completed' });
+    const issuesReported = await Lead.countDocuments({ ...query, installationIssueReported: true });
 
     res.status(200).json({
       status: 'success',
-      data: {
-        totalAssigned,
-        inProgress,
-        completed,
-        issuesReported
-      }
+      data: { totalAssigned, inProgress, completed, issuesReported }
     });
   } catch (error) {
     next(error);
@@ -104,9 +86,8 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
 
     const query = { transferredToInstallation: true };
 
-    // Limit to the logged-in installer if not an admin
     if (!['superAdmin', 'admin'].includes(req.user.role)) {
-      query.installationRep = req.user._id;
+      query.installationRep = new mongoose.Types.ObjectId(String(req.user._id));
     }
 
     if (search) {
@@ -117,13 +98,8 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
       ];
     }
 
-    if (status) {
-      query.installationStatus = status;
-    }
-
-    if (issueReported) {
-      query.installationIssueReported = issueReported === 'true';
-    }
+    if (status) query.installationStatus = status;
+    if (issueReported) query.installationIssueReported = issueReported === 'true';
 
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
@@ -146,9 +122,7 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
       total,
       pages: Math.ceil(total / limitNum),
       currentPage: pageNum,
-      data: {
-        leads: formattedLeads
-      }
+      data: { leads: formattedLeads }
     });
   } catch (error) {
     next(error);
@@ -167,7 +141,6 @@ export const assignInstallationRep = async (req, res, next) => {
       throw new Error('Please provide installerId to assign this lead to');
     }
 
-    // Verify installer user exists and is an installation rep
     const targetUser = await User.findById(installerId);
     if (!targetUser) {
       res.status(404);
@@ -185,16 +158,14 @@ export const assignInstallationRep = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Must be transferred to installation first
     if (!lead.transferredToInstallation) {
       res.status(400);
       throw new Error('Lead must be verified and transferred to Installation Team first');
     }
 
-    lead.installationRep = installerId;
-    lead.installationStatus = 'assigned'; // Reset to assigned on new assignment
+    lead.installationRep = new mongoose.Types.ObjectId(String(installerId));
+    lead.installationStatus = 'assigned';
 
-    // Add remark entry
     lead.remarks.push({
       note: `[System] Lead assigned to Installer: ${targetUser.name}`,
       addedBy: req.user._id
@@ -204,16 +175,14 @@ export const assignInstallationRep = async (req, res, next) => {
 
     res.status(200).json({
       status: 'success',
-      data: {
-        lead: formatLeadWithIntegrations(updatedLead)
-      }
+      data: { lead: formatLeadWithIntegrations(updatedLead) }
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Manage/Update Installation Status (Assigned / In Progress / Completed)
+// @desc    Manage/Update Installation Status
 // @route   PUT /api/v1/installation/leads/:id/status
 // @access  Private (Admins and Installers only)
 export const updateInstallationStatus = async (req, res, next) => {
@@ -231,18 +200,15 @@ export const updateInstallationStatus = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Access check: installers can only modify their own assigned installations
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.installationRep?.toString() !== req.user._id.toString()) {
+    const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
     }
 
     lead.installationStatus = status.toLowerCase();
-    if (progressRemarks) {
-      lead.installationProgressRemarks = progressRemarks;
-    }
+    if (progressRemarks) lead.installationProgressRemarks = progressRemarks;
 
-    // Add remark entry
     lead.remarks.push({
       note: `[Installation Team] Status updated to: ${status.toUpperCase()}. Progress: ${progressRemarks || 'None'}`,
       addedBy: req.user._id
@@ -252,16 +218,14 @@ export const updateInstallationStatus = async (req, res, next) => {
 
     res.status(200).json({
       status: 'success',
-      data: {
-        lead: formatLeadWithIntegrations(updatedLead)
-      }
+      data: { lead: formatLeadWithIntegrations(updatedLead) }
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Upload Installation Proof (Image / Document)
+// @desc    Upload Installation Proof
 // @route   PUT /api/v1/installation/leads/:id/proof
 // @access  Private (Admins and Installers only)
 export const uploadInstallationProof = async (req, res, next) => {
@@ -277,16 +241,14 @@ export const uploadInstallationProof = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Access check
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.installationRep?.toString() !== req.user._id.toString()) {
+    const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
     }
 
-    const relativePath = `/uploads/proofs/${req.file.filename}`;
-    lead.installationProofUrl = relativePath;
+    lead.installationProofUrl = `/uploads/proofs/${req.file.filename}`;
 
-    // Add remark entry
     lead.remarks.push({
       note: `[Installation Team] Uploaded installation proof file: ${req.file.originalname}`,
       addedBy: req.user._id
@@ -296,9 +258,7 @@ export const uploadInstallationProof = async (req, res, next) => {
 
     res.status(200).json({
       status: 'success',
-      data: {
-        lead: formatLeadWithIntegrations(updatedLead)
-      }
+      data: { lead: formatLeadWithIntegrations(updatedLead) }
     });
   } catch (error) {
     next(error);
@@ -323,8 +283,8 @@ export const reportInstallationIssue = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Access check
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.installationRep?.toString() !== req.user._id.toString()) {
+    const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
     }
@@ -332,7 +292,6 @@ export const reportInstallationIssue = async (req, res, next) => {
     lead.installationIssueReported = true;
     lead.installationIssueRemarks = issueRemarks;
 
-    // Add remark entry
     lead.remarks.push({
       note: `[Installation Team] 🚨 ISSUE/DELAY REPORTED: ${issueRemarks}`,
       addedBy: req.user._id
@@ -342,9 +301,7 @@ export const reportInstallationIssue = async (req, res, next) => {
 
     res.status(200).json({
       status: 'success',
-      data: {
-        lead: formatLeadWithIntegrations(updatedLead)
-      }
+      data: { lead: formatLeadWithIntegrations(updatedLead) }
     });
   } catch (error) {
     next(error);
