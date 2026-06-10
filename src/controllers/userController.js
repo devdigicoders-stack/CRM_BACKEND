@@ -434,3 +434,30 @@ export const toggleUserStatus = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Register an FCM registration token for push notifications
+// @route   POST /api/v1/users/fcm-token
+// @access  Private
+export const registerFcmToken = async (req, res, next) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      res.status(400);
+      throw new Error('Please provide an FCM token');
+    }
+
+    const user = req.user;
+    if (!user.fcmTokens.includes(token)) {
+      user.fcmTokens.push(token);
+      await user.save();
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'FCM token registered successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

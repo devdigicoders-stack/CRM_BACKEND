@@ -319,6 +319,20 @@ export const assignLead = async (req, res, next) => {
 
     const updatedLead = await lead.save();
 
+    // Send assignment notification
+    try {
+      const { createNotificationAndSendPush } = await import('./notificationController.js');
+      await createNotificationAndSendPush({
+        recipientId: userId,
+        title: '📋 New Lead Assigned',
+        message: `You have been assigned a new lead: "${updatedLead.name}".`,
+        leadId: updatedLead._id,
+        type: 'general',
+      });
+    } catch (err) {
+      console.error('Failed to send lead assignment notification:', err.message);
+    }
+
     res.status(200).json({
       status: 'success',
       data: {

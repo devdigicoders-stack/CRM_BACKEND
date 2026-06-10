@@ -1,5 +1,35 @@
 import { Notification } from '../models/Notification.js';
 import { Lead } from '../models/Lead.js';
+import { Admin } from '../models/Admin.js';
+import { User } from '../models/User.js';
+import { sendPushNotification } from '../config/firebase.js';
+
+// Helper to create a notification in database and send push notification to FCM
+export const createNotificationAndSendPush = async ({ recipientId, title, message, leadId, type }) => {
+  try {
+    await Notification.create({
+      title,
+      message,
+      recipient: recipientId,
+      lead: leadId,
+      type: type || 'general',
+    });
+
+    let recipient = await User.findById(recipientId).select('fcmToken').lean();
+    if (!recipient) recipient = await Admin.findById(recipientId).select('fcmToken').lean();
+
+    if (recipient?.fcmToken) {
+      await sendPushNotification(
+        recipient.fcmToken,
+        title,
+        message,
+        { leadId: leadId ? leadId.toString() : '', type: type || 'general' }
+      );
+    }
+  } catch (error) {
+    console.error('Error in createNotificationAndSendPush:', error.message);
+  }
+};
 
 // Helper to generate notifications for missed meetings / followups
 export const generateMissedAlerts = async (userId, userRole) => {
@@ -31,11 +61,11 @@ export const generateMissedAlerts = async (userId, userRole) => {
       });
 
       if (!alertExists) {
-        await Notification.create({
+        await createNotificationAndSendPush({
           title: '🚨 Missed Follow-up / Meeting',
           message: `Missed follow-up for lead "${lead.name}" (${lead.phone}) scheduled on ${new Date(lead.followUpDate).toISOString().split('T')[0]}`,
-          recipient: recipientId,
-          lead: lead._id,
+          recipientId,
+          leadId: lead._id,
           type: 'missed_followup',
         });
       }

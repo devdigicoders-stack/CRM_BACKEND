@@ -2,6 +2,7 @@ import app from './app.js';
 import { env } from './config/env.js';
 import { connectDB } from './config/db.js';
 import { seedSuperAdmin } from './config/seeder.js';
+import { initFirebase } from './config/firebase.js';
 
 const startServer = async () => {
   try {
@@ -10,6 +11,9 @@ const startServer = async () => {
     
     // Seed default Super Admin if needed
     await seedSuperAdmin();
+
+    // Initialize Firebase Admin SDK
+    initFirebase();
 
     app.listen(env.PORT, () => {
       console.log(`🚀 Server running in ${env.NODE_ENV} mode on port ${env.PORT}`);

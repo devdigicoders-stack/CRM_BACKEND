@@ -34,9 +34,17 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    fcmToken: {
+      type: String,
+      trim: true,
+    },
     active: {
       type: Boolean,
       default: true,
+    },
+    fcmTokens: {
+      type: [String],
+      default: [],
     },
   },
   {

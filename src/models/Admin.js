@@ -34,6 +34,10 @@ const adminSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    fcmToken: {
+      type: String,
+      trim: true,
+    },
     active: {
       type: Boolean,
       default: true,
@@ -41,6 +45,10 @@ const adminSchema = new mongoose.Schema(
     permissions: {
       type: [String],
       enum: ['leads', 'accounts', 'installation', 'reports', 'settings', 'users', 'dashboard'],
+      default: [],
+    },
+    fcmTokens: {
+      type: [String],
       default: [],
     },
   },

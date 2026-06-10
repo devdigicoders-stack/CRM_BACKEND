@@ -21,12 +21,14 @@ apiRouter.get('/health', getHealth);
 apiRouter.post('/auth/register', authController.register);
 apiRouter.post('/auth/login', authController.login);
 apiRouter.post('/auth/change-password', protect, authController.changePassword);
+apiRouter.post('/auth/fcm-token', protect, authController.saveFcmToken);
 apiRouter.post('/auth/logout', authController.logout);
 apiRouter.get('/profile', protect, authController.getProfile);
 apiRouter.put('/profile', protect, authController.uploadProfilePicMiddleware, authController.updateProfile);
 
 // --- Sales Users List (for assignment dropdown - accessible by all) ---
 apiRouter.get('/users/sales-list', protect, userController.getSalesUsers);
+apiRouter.post('/users/fcm-token', protect, userController.registerFcmToken);
 
 // --- Lead Routes ---
 apiRouter.post('/leads', protect, checkPermission('leads'), leadController.createLead);

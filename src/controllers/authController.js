@@ -212,6 +212,29 @@ export const getProfile = async (req, res, next) => {
   }
 };
 
+// @desc    Save FCM token
+// @route   POST /api/v1/auth/fcm-token
+// @access  Private
+export const saveFcmToken = async (req, res, next) => {
+  try {
+    const { fcmToken } = req.body;
+
+    if (!fcmToken) {
+      res.status(400);
+      throw new Error('Please provide fcmToken');
+    }
+
+    const isAdmin = ['superAdmin', 'admin'].includes(req.user.role);
+    const Model = isAdmin ? Admin : User;
+
+    await Model.findByIdAndUpdate(req.user._id, { fcmToken });
+
+    res.status(200).json({ status: 'success', message: 'FCM token saved' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Update current user profile
 // @route   PUT /api/v1/profile
 // @access  Private
