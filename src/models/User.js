@@ -30,6 +30,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    profilePic: {
+      type: String,
+      trim: true,
+    },
     active: {
       type: Boolean,
       default: true,

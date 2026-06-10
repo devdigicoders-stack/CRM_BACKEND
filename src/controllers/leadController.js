@@ -189,7 +189,8 @@ export const getLeadById = async (req, res, next) => {
     const isSpecialAccess = 
       ['superAdmin', 'admin'].includes(req.user.role) ||
       (req.user.role === 'accountant' && lead.transferredToAccounts === true) ||
-      (req.user.role === 'installation' && lead.installationRep?.toString() === req.user._id.toString());
+      (req.user.role === 'installation' && lead.installationRep?.toString() === req.user._id.toString()) ||
+      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString());
 
     const assignedId = lead.assignedTo?._id ? lead.assignedTo._id.toString() : lead.assignedTo?.toString();
     if (!isSpecialAccess && assignedId !== req.user._id.toString()) {

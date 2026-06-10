@@ -1,7 +1,37 @@
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import { Admin } from '../models/Admin.js';
 import { User } from '../models/User.js';
 import { env } from '../config/env.js';
+
+// Multer storage for profile pic
+const profilePicStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = 'public/uploads/profiles';
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `profile-${req.user._id}-${Date.now()}${path.extname(file.originalname)}`);
+  },
+});
+
+const profilePicFilter = (req, file, cb) => {
+  const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
+  if (allowed.includes(path.extname(file.originalname).toLowerCase())) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only jpg, jpeg, png, webp images are allowed'), false);
+  }
+};
+
+export const uploadProfilePicMiddleware = multer({
+  storage: profilePicStorage,
+  fileFilter: profilePicFilter,
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).single('profilePic');
 
 // Helper to sign JWT token
 const signToken = (id) => {
@@ -190,7 +220,6 @@ export const updateProfile = async (req, res, next) => {
     const { name, email, phone } = req.body;
     const userId = req.user._id;
 
-    // Determine collection (Admin or User)
     const isAdmin = ['superAdmin', 'admin'].includes(req.user.role);
     const Model = isAdmin ? Admin : User;
 
@@ -200,7 +229,6 @@ export const updateProfile = async (req, res, next) => {
       throw new Error('User not found');
     }
 
-    // If email is changing, make sure it is not taken in both Admin and User collections
     if (email && email !== user.email) {
       const emailTakenAdmin = await Admin.findOne({ email });
       const emailTakenUser = await User.findOne({ email });
@@ -213,6 +241,16 @@ export const updateProfile = async (req, res, next) => {
 
     if (name) user.name = name;
     if (phone) user.phone = phone;
+
+    // Handle profile pic upload
+    if (req.file) {
+      // Delete old profile pic if exists
+      if (user.profilePic) {
+        const oldPath = `public${user.profilePic}`;
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      }
+      user.profilePic = `/uploads/profiles/${req.file.filename}`;
+    }
 
     const updatedUser = await user.save();
     updatedUser.password = undefined;

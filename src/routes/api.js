@@ -23,7 +23,7 @@ apiRouter.post('/auth/login', authController.login);
 apiRouter.post('/auth/change-password', protect, authController.changePassword);
 apiRouter.post('/auth/logout', authController.logout);
 apiRouter.get('/profile', protect, authController.getProfile);
-apiRouter.put('/profile', protect, authController.updateProfile);
+apiRouter.put('/profile', protect, authController.uploadProfilePicMiddleware, authController.updateProfile);
 
 // --- Lead Routes ---
 apiRouter.post('/leads', protect, checkPermission('leads'), leadController.createLead);
