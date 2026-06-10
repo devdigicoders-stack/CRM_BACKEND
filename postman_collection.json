@@ -1,0 +1,4324 @@
+{
+	"info": {
+		"_postman_id": "8c59ff10-093a-4467-8cfb-810a0c4f87a8",
+		"name": "CRM API Collection",
+		"description": "Postman Collection for CRM Backend API. Structured with a dedicated Super Admin Panel folder.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Super Admin Panel",
+			"item": [
+				{
+					"name": "1. Super Admin Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const responseJson = pm.response.json();",
+									"if (responseJson && responseJson.token) {",
+									"    pm.collectionVariables.set(\"token\", responseJson.token);",
+									"    console.log(\"Saved JWT token to collection variable 'token'\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"superadmin@crm.com\",\n    \"password\": \"admin12345\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Create Super Admin",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Second Super Admin\",\n    \"email\": \"superadmin2@crm.com\",\n    \"password\": \"supersecure123\",\n    \"role\": \"superAdmin\",\n    \"phone\": \"9988776655\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Create Admin (with Permissions)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Test Admin\",\n    \"email\": \"admin@crm.com\",\n    \"password\": \"adminpassword123\",\n    \"role\": \"admin\",\n    \"phone\": \"9876543211\",\n    \"permissions\": [\"leads\", \"accounts\", \"installation\", \"reports\", \"settings\", \"users\", \"dashboard\"]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. Create Accountant",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Suresh Accountant\",\n    \"email\": \"suresh@crm.com\",\n    \"password\": \"accountantpassword123\",\n    \"role\": \"accountant\",\n    \"phone\": \"9988776633\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Create Calling Rep",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Arjun Telecaller\",\n    \"email\": \"arjun@crm.com\",\n    \"password\": \"callingpassword123\",\n    \"role\": \"calling\",\n    \"phone\": \"9988775500\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "6. Create Sales Rep",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Amit Sales Rep\",\n    \"email\": \"amit_sales@crm.com\",\n    \"password\": \"salespassword123\",\n    \"role\": \"sales\",\n    \"phone\": \"9988776655\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "7. Create Installer",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Imran Installer\",\n    \"email\": \"imran@crm.com\",\n    \"password\": \"installerpassword123\",\n    \"role\": \"installation\",\n    \"phone\": \"9988775522\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "8. Create CRM User",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Sanjay CRM User\",\n    \"email\": \"sanjay@crm.com\",\n    \"password\": \"crmuserpassword123\",\n    \"role\": \"crmuser\",\n    \"phone\": \"9988775533\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "9. List Staff & Users (Filter / Search)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/users?role=sales_rep&active=true&search=Amit&page=1&limit=10",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							],
+							"query": [
+								{
+									"key": "role",
+									"value": "sales_rep"
+								},
+								{
+									"key": "active",
+									"value": "true"
+								},
+								{
+									"key": "search",
+									"value": "Amit"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "10. Update Admin Permissions",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"permissions\": [\"leads\", \"accounts\", \"installation\", \"reports\", \"settings\", \"users\", \"dashboard\"]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users/:id/permissions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users",
+								":id",
+								"permissions"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "admin_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "10b. Remove All Admin Permissions",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"permissions\": []\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users/:id/permissions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users",
+								":id",
+								"permissions"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "admin_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "11. Toggle User Active Status",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/users/:id/toggle-status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users",
+								":id",
+								"toggle-status"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "user_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "11. Get Global Settings",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/settings",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"settings"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "12. Update Settings Metadata",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"systemName\": \"Ayup Sales CRM\",\n    \"leadSources\": [\"Direct\", \"Facebook Ads\", \"Google Ads\", \"Instagram Ads\"],\n    \"leadTags\": [\"new\", \"interested\", \"hot\", \"warm\", \"cold\", \"converted\", \"missed\"]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/settings",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"settings"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "13. Get Global Dashboard Insights",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/stats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"stats"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "14. Get Team Performance Analytics",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/performance",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"performance"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "15. Get Calendar Range Events",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/calendar?startDate=2026-06-01T00:00:00.000Z&endDate=2026-06-30T23:59:59.000Z",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"calendar"
+							],
+							"query": [
+								{
+									"key": "startDate",
+									"value": "2026-06-01T00:00:00.000Z"
+								},
+								{
+									"key": "endDate",
+									"value": "2026-06-30T23:59:59.000Z"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "16. Get Notifications Alert List",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/notifications",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"notifications"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "17. Export Excel Data Report",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/reports/export/excel",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"reports",
+								"export",
+								"excel"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "18. Export PDF Summary Report",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/reports/export/pdf",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"reports",
+								"export",
+								"pdf"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "19. Get All Leads (Admin View)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads?page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "20. Assign / Reassign Lead",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"userId\": \"staff_user_id_here\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/assign",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"assign"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "21. Track Missed Follow-ups (Admin View)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/reminders/missed",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"reminders",
+								"missed"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "22. Access Today's Reminders List",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/reminders/today",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"reminders",
+								"today"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "23. Manage Profile Details",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Super Admin Updated\",\n    \"phone\": \"9876543210\",\n    \"email\": \"superadmin@crm.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/profile",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"profile"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "24. Change Password",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"currentPassword\": \"admin12345\",\n    \"newPassword\": \"adminnewsecure99\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/change-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"change-password"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "25. Logout",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/auth/logout",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"logout"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Admin Panel",
+			"item": [
+				{
+					"name": "1. Admin Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const responseJson = pm.response.json();",
+									"if (responseJson && responseJson.token) {",
+									"    pm.collectionVariables.set(\"token\", responseJson.token);",
+									"    console.log(\"Saved JWT token to collection variable 'token'\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@crm.com\",\n    \"password\": \"adminpassword123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Get Admin Dashboard Stats",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/stats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"stats"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Add Lead (Admin)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Ramesh Lead\",\n    \"phone\": \"9876543210\",\n    \"email\": \"ramesh@example.com\",\n    \"source\": \"Direct\",\n    \"priority\": \"medium\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. Create Accountant",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Suresh Accountant\",\n    \"email\": \"suresh@crm.com\",\n    \"password\": \"accountantpassword123\",\n    \"role\": \"accountant\",\n    \"phone\": \"9988776633\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Create Calling Rep",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Arjun Telecaller\",\n    \"email\": \"arjun@crm.com\",\n    \"password\": \"callingpassword123\",\n    \"role\": \"calling\",\n    \"phone\": \"9988775500\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "6. Create Sales Rep",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Amit Sales Rep\",\n    \"email\": \"amit_sales@crm.com\",\n    \"password\": \"salespassword123\",\n    \"role\": \"sales\",\n    \"phone\": \"9988776655\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "7. Create Installer",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Imran Installer\",\n    \"email\": \"imran@crm.com\",\n    \"password\": \"installerpassword123\",\n    \"role\": \"installation\",\n    \"phone\": \"9988775522\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "8. Create CRM User",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Sanjay CRM User\",\n    \"email\": \"sanjay@crm.com\",\n    \"password\": \"crmuserpassword123\",\n    \"role\": \"crmuser\",\n    \"phone\": \"9988775533\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"users"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "16. Assign Lead to Installer",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"installerId\": \"installer_user_id_here\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/installation/leads/:id/assign-rep",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"installation",
+								"leads",
+								":id",
+								"assign-rep"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "10. View and Manage All Leads",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads?page=1&limit=20",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "11. Assign Lead to Calling Team",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"userId\": \"calling_agent_user_id_here\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/assign",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"assign"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "12. Monitor Lead Flow from Calling to Sales",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/stats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"stats"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "13. Update Lead Status (Pending/Closed/Negative)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"interested\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "14. Manage Follow-up Reminders",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"note\": \"Set follow-up alert reminder.\",\n    \"followUpDate\": \"2026-06-09T18:00:00.000Z\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/remarks",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"remarks"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "15. Track Missed Follow-ups",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/reminders/missed",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"reminders",
+								"missed"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "16. Receive Notification for Missed Meetings",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/notifications",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"notifications"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "17. Filter Leads (Tags/Search)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads?search=ramesh&tag=Interested",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads"
+							],
+							"query": [
+								{
+									"key": "search",
+									"value": "ramesh"
+								},
+								{
+									"key": "tag",
+									"value": "Interested"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "18. Access Calendar View",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/calendar?startDate=2026-06-01T00:00:00.000Z&endDate=2026-06-30T23:59:59.000Z",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"calendar"
+							],
+							"query": [
+								{
+									"key": "startDate",
+									"value": "2026-06-01T00:00:00.000Z"
+								},
+								{
+									"key": "endDate",
+									"value": "2026-06-30T23:59:59.000Z"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "19. View Reports and Performance Data",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/performance",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"performance"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "20. Monitor Employee Call Activity and Performance",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/performance",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"performance"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "21. Track Number of Calls Made by Each Member",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/performance",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"performance"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "22. Change Password",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"currentPassword\": \"adminpassword123\",\n    \"newPassword\": \"adminnewsecure123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/change-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"change-password"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "23. Logout",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/auth/logout",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"logout"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Accountant Panel",
+			"item": [
+				{
+					"name": "1. Accountant Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const responseJson = pm.response.json();",
+									"if (responseJson && responseJson.token) {",
+									"    pm.collectionVariables.set(\"token\", responseJson.token);",
+									"    console.log(\"Saved JWT token to collection variable 'token'\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"suresh@crm.com\",\n    \"password\": \"accountantpassword123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Accountant Dashboard Stats",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/accounts/dashboard",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"accounts",
+								"dashboard"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. View Closed Won Leads (Received from Sales Team)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/accounts/leads?verificationStatus=pending",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"accounts",
+								"leads"
+							],
+							"query": [
+								{
+									"key": "verificationStatus",
+									"value": "pending"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. Verify Sales (Check Transaction)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Manage Verification Status (Pending / Verified / Rejected)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"verificationStatus\": \"verified\",\n    \"remarks\": \"Transaction checked and matches downpayment receipt.\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/accounts/leads/:id/verify",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"accounts",
+								"leads",
+								":id",
+								"verify"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "6. Reject Lead and Send Back to Sales with Remarks",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"verificationStatus\": \"rejected\",\n    \"remarks\": \"Transaction details are incomplete. No downpayment proof attached. Sending back to sales.\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/accounts/leads/:id/verify",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"accounts",
+								"leads",
+								":id",
+								"verify"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "7. Approve / Verify Sale",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"verificationStatus\": \"verified\",\n    \"remarks\": \"All payments confirmed. Approved for installation.\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/accounts/leads/:id/verify",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"accounts",
+								"leads",
+								":id",
+								"verify"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "8. Upload Invoice",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "invoice",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/accounts/leads/:id/invoice",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"accounts",
+								"leads",
+								":id",
+								"invoice"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "9. Add Tracking ID",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"trackingId\": \"TRACK_FEDEX_998877\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/accounts/leads/:id/tracking",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"accounts",
+								"leads",
+								":id",
+								"tracking"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "10. Update Payment Mode (Cash / COD / DP / EMI)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"paymentMode\": \"emi\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/accounts/leads/:id/payment",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"accounts",
+								"leads",
+								":id",
+								"payment"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "11. Update Payment Status (Pending / Partial / Completed)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"paymentStatus\": \"completed\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/accounts/leads/:id/payment",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"accounts",
+								"leads",
+								":id",
+								"payment"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "12. Add Transaction Details",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"transactionDetails\": \"Downpayment: Ref-SBI9988776655, EMI: Ref-HDFC22334455\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/accounts/leads/:id/payment",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"accounts",
+								"leads",
+								":id",
+								"payment"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "13. Transfer Verified Leads to Installation Team",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/accounts/leads/:id/transfer",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"accounts",
+								"leads",
+								":id",
+								"transfer"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "14. Change Password",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"currentPassword\": \"accountantpassword123\",\n    \"newPassword\": \"accountantnewsecure123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/change-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"change-password"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "15. Logout",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/auth/logout",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"logout"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "16. Assign Lead to Installer",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"installerId\": \"installer_user_id_here\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/installation/leads/:id/assign-rep",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"installation",
+								"leads",
+								":id",
+								"assign-rep"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "General Leads & Auth",
+			"item": [
+				{
+					"name": "1. Create Lead",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Amit Sharma\",\n    \"phone\": \"9123456789\",\n    \"email\": \"amit@example.com\",\n    \"source\": \"Direct\",\n    \"priority\": \"high\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Change Password",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"currentPassword\": \"admin12345\",\n    \"newPassword\": \"adminnewsecure99\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/change-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"change-password"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Get Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/profile",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"profile"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. Update Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Super Admin Updated\",\n    \"phone\": \"9876543210\",\n    \"email\": \"superadmin@crm.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/profile",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"profile"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Update Sale Details (Product & Amount)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"productDetails\": \"Solar Panel Kit - Premium Edition\",\n    \"dealValue\": 45000\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/sale-details",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"sale-details"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "6. Transfer Lead to Accounts Team",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/transfer-to-accounts",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"transfer-to-accounts"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "7. Update Delivery Status & Timeline",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"deliveryStatus\": \"in_progress\",\n    \"expectedDeliveryDate\": \"2026-06-20T18:00:00.000Z\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/delivery",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"delivery"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Installation Panel",
+			"item": [
+				{
+					"name": "1. Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const responseJson = pm.response.json();",
+									"if (responseJson && responseJson.token) {",
+									"    pm.collectionVariables.set(\"token\", responseJson.token);",
+									"    console.log(\"Saved JWT token to collection variable 'token'\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"imran@crm.com\",\n    \"password\": \"installerpassword123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Dashboard",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/installation/dashboard",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"installation",
+								"dashboard"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. View Assigned Verified Leads",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/installation/leads?status=assigned",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"installation",
+								"leads"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "assigned"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. Manage Installation Status (Assigned / In Progress / Completed)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"in_progress\",\n    \"progressRemarks\": \"Tools unpacked. Starting panel mounting.\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/installation/leads/:id/status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"installation",
+								"leads",
+								":id",
+								"status"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Update Installation Progress",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"in_progress\",\n    \"progressRemarks\": \"Mounting complete. Starting electrical wiring next.\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/installation/leads/:id/status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"installation",
+								"leads",
+								":id",
+								"status"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "6. Upload Installation Proof (Image / Document)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "proof",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/installation/leads/:id/proof",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"installation",
+								"leads",
+								":id",
+								"proof"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "7. Report Issues / Delays",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"issueRemarks\": \"Faced unexpected bracket mismatch. Delayed by 1 day.\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/installation/leads/:id/issue",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"installation",
+								"leads",
+								":id",
+								"issue"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "8. Mark Installation as Completed",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"completed\",\n    \"progressRemarks\": \"Installation verified and tested. Solar production active.\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/status",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"status"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "9. Change Password",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"currentPassword\": \"installerpassword123\",\n    \"newPassword\": \"installernewsecure123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/change-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"change-password"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "10. Logout",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/auth/logout",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"logout"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "CRM Panel",
+			"item": [
+				{
+					"name": "1. CRM Login (Calling Rep Login)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const responseJson = pm.response.json();",
+									"if (responseJson && responseJson.token) {",
+									"    pm.collectionVariables.set(\"token\", responseJson.token);",
+									"    console.log(\"Saved JWT token to collection variable 'token'\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"arjun@crm.com\",\n    \"password\": \"callingpassword123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. CRM Dashboard Stats",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/stats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"stats"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Add New Lead",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Client Amit\",\n    \"phone\": \"9988112233\",\n    \"email\": \"amitclient@example.com\",\n    \"source\": \"Google Ads\",\n    \"priority\": \"medium\",\n    \"remark\": \"Initial inquiry about premium solar panels\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. View Assigned Leads List",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. View Lead Details with Call & WhatsApp Integration",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "6. Update Lead Details (Name, Phone, Email, Tags, Priority)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Client Amit Kumar\",\n    \"phone\": \"9988112233\",\n    \"email\": \"amitclient@example.com\",\n    \"priority\": \"high\",\n    \"tags\": [\"Interested\"]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "7. Add Call Note / Remarks after each call",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"note\": \"Discussed product pricing. Customer is considering the options.\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/remarks",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"remarks"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "8. Set Next Follow-up Date, Apply Tags & Update Priority",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"note\": \"Set follow-up alert and updated tags/priority.\",\n    \"followUpDate\": \"2026-06-09T10:00:00.000Z\",\n    \"tags\": [\"Interested\", \"FollowUpRequired\"],\n    \"priority\": \"high\",\n    \"status\": \"interested\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/remarks",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"remarks"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "9. Set and Manage Follow-up Reminders",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"note\": \"Scheduled reminder for follow-up.\",\n    \"followUpDate\": \"2026-06-12T14:00:00.000Z\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/remarks",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"remarks"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "10. Today's Reminder List",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/reminders/today",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"reminders",
+								"today"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "11. Track Missed Follow-ups",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/reminders/missed",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"reminders",
+								"missed"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "12. Search and Filter Leads",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads?search=Amit&tag=Interested",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads"
+							],
+							"query": [
+								{
+									"key": "search",
+									"value": "Amit"
+								},
+								{
+									"key": "tag",
+									"value": "Interested"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "13. Assign Interested Leads to Sales Panel",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"userId\": \"sales_rep_user_id_here\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/assign",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"assign"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "14. Change Password",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"currentPassword\": \"callingpassword123\",\n    \"newPassword\": \"callingnewsecure123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/change-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"change-password"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "15. Logout",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/auth/logout",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"logout"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Sales Panel",
+			"item": [
+				{
+					"name": "1. Sales Rep Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const responseJson = pm.response.json();",
+									"if (responseJson && responseJson.token) {",
+									"    pm.collectionVariables.set(\"token\", responseJson.token);",
+									"    console.log(\"Saved JWT token to collection variable 'token'\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"amit_sales@crm.com\",\n    \"password\": \"salespassword123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Sales Rep Dashboard Stats",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/stats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"stats"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. View Assigned Interested Leads",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads?status=interested",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "interested"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. Manage Lead Details (View Details)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Schedule Meetings with Clients",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"note\": \"Discuss solar panel integration details.\",\n    \"followUpDate\": \"2026-06-10T14:30:00.000Z\",\n    \"tags\": [\"Meeting Scheduled\"]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/remarks",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"remarks"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "6. Update Meeting Notes and Status",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"note\": \"Customer verified pricing and agreed to downpayment.\",\n    \"status\": \"interested\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/remarks",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"remarks"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "7. Set Next Follow-up / Meeting Date",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"note\": \"Set next touchpoint follow-up.\",\n    \"followUpDate\": \"2026-06-15T11:00:00.000Z\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/remarks",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"remarks"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "8. Track Missed Meetings",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/dashboard/reminders/missed",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"dashboard",
+								"reminders",
+								"missed"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "9. Manage Lead Progress (Interested / In Process / Converted)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"in_process\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "10. Mark Lead as Sale Confirmed (Closed Won)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/transfer-to-accounts",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"transfer-to-accounts"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "11. Add Product / Service Details",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"productDetails\": \"10kW Premium Monocrystalline Solar Grid\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/sale-details",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"sale-details"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "12. Add Deal Value / Sale Amount",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"dealValue\": 75000\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/sale-details",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"sale-details"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "13. Upload Sale Documents / Agreement",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "agreement",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/sale-documents",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"sale-documents"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "14. Transfer Closed Won Leads to Accounts Team",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/transfer-to-accounts",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"transfer-to-accounts"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "15. Manage Delivery Status (View Details)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "16. Update Delivery Status (Pending / In Progress / Delivered)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"deliveryStatus\": \"in_progress\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/delivery",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"delivery"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "17. Manage Expected Delivery Timeline",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"expectedDeliveryDate\": \"2026-07-20T18:00:00.000Z\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/leads/:id/delivery",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"leads",
+								":id",
+								"delivery"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "lead_id_here"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "18. Change Password",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"currentPassword\": \"salespassword123\",\n    \"newPassword\": \"salesnewsecure123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/change-password",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"change-password"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "19. Logout",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/auth/logout",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"logout"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5001/api/v1",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
