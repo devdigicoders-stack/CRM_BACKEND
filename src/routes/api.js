@@ -29,6 +29,7 @@ apiRouter.put('/profile', protect, authController.uploadProfilePicMiddleware, au
 // --- Sales Users List (for assignment dropdown - accessible by all) ---
 apiRouter.get('/users/sales-list', protect, userController.getSalesUsers);
 apiRouter.post('/users/fcm-token', protect, userController.registerFcmToken);
+apiRouter.post('/users/fcm-token', protect, userController.registerFcmToken);
 
 // --- Lead Routes ---
 apiRouter.post('/leads', protect, checkPermission('leads'), leadController.createLead);
