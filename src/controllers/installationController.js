@@ -197,7 +197,7 @@ export const assignInstallationRep = async (req, res, next) => {
     // Add remark entry
     lead.remarks.push({
       note: `[System] Lead assigned to Installer: ${targetUser.name}`,
-      addedBy: req.user.id
+      addedBy: req.user._id
     });
 
     const updatedLead = await lead.save();
@@ -232,7 +232,7 @@ export const updateInstallationStatus = async (req, res, next) => {
     }
 
     // Access check: installers can only modify their own assigned installations
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.installationRep?.toString() !== req.user.id) {
+    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.installationRep?.toString() !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
     }
@@ -245,7 +245,7 @@ export const updateInstallationStatus = async (req, res, next) => {
     // Add remark entry
     lead.remarks.push({
       note: `[Installation Team] Status updated to: ${status.toUpperCase()}. Progress: ${progressRemarks || 'None'}`,
-      addedBy: req.user.id
+      addedBy: req.user._id
     });
 
     const updatedLead = await lead.save();
@@ -278,7 +278,7 @@ export const uploadInstallationProof = async (req, res, next) => {
     }
 
     // Access check
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.installationRep?.toString() !== req.user.id) {
+    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.installationRep?.toString() !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
     }
@@ -289,7 +289,7 @@ export const uploadInstallationProof = async (req, res, next) => {
     // Add remark entry
     lead.remarks.push({
       note: `[Installation Team] Uploaded installation proof file: ${req.file.originalname}`,
-      addedBy: req.user.id
+      addedBy: req.user._id
     });
 
     const updatedLead = await lead.save();
@@ -324,7 +324,7 @@ export const reportInstallationIssue = async (req, res, next) => {
     }
 
     // Access check
-    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.installationRep?.toString() !== req.user.id) {
+    if (!['superAdmin', 'admin'].includes(req.user.role) && lead.installationRep?.toString() !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
     }
@@ -335,7 +335,7 @@ export const reportInstallationIssue = async (req, res, next) => {
     // Add remark entry
     lead.remarks.push({
       note: `[Installation Team] 🚨 ISSUE/DELAY REPORTED: ${issueRemarks}`,
-      addedBy: req.user.id
+      addedBy: req.user._id
     });
 
     const updatedLead = await lead.save();

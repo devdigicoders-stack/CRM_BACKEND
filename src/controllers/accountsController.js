@@ -192,7 +192,7 @@ export const verifySale = async (req, res, next) => {
     // Add remark entry
     lead.remarks.push({
       note: `[Accounts Team] Sale ${verificationStatus === 'verified' ? 'Approved & Verified' : 'Rejected'}. Remarks: ${remarks || 'None'}`,
-      addedBy: req.user.id
+      addedBy: req.user._id
     });
 
     // If rejected, send back to sales team (set status back to assigned so they can handle it)
@@ -236,7 +236,7 @@ export const uploadInvoice = async (req, res, next) => {
     // Add remark entry
     lead.remarks.push({
       note: `[Accounts Team] Invoice uploaded. File: ${req.file.originalname}`,
-      addedBy: req.user.id
+      addedBy: req.user._id
     });
 
     const updatedLead = await lead.save();
@@ -288,7 +288,7 @@ export const updatePaymentAndTransaction = async (req, res, next) => {
     // Add remark entry
     lead.remarks.push({
       note: `[Accounts Team] Payment/Transaction updated (Mode: ${lead.paymentMode || 'N/A'}, Status: ${lead.paymentStatus || 'N/A'})`,
-      addedBy: req.user.id
+      addedBy: req.user._id
     });
 
     const updatedLead = await lead.save();
@@ -327,7 +327,7 @@ export const updateTrackingId = async (req, res, next) => {
     // Add remark entry
     lead.remarks.push({
       note: `[Accounts Team] Tracking ID updated: ${trackingId}`,
-      addedBy: req.user.id
+      addedBy: req.user._id
     });
 
     const updatedLead = await lead.save();
@@ -365,7 +365,7 @@ export const transferToInstallation = async (req, res, next) => {
     // Add remark entry
     lead.remarks.push({
       note: `[Accounts Team] Verified Lead transferred to Installation Team.`,
-      addedBy: req.user.id
+      addedBy: req.user._id
     });
 
     const updatedLead = await lead.save();
