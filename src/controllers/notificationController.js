@@ -20,19 +20,21 @@ export const generateMissedAlerts = async (userId, userRole) => {
     const missedLeads = await Lead.find(query).lean();
 
     for (const lead of missedLeads) {
-      // Check if alert already exists for this lead
+      const recipientId = ['superAdmin', 'admin'].includes(userRole) ? userId : lead.assignedTo;
+
+      if (!recipientId) continue;
+
       const alertExists = await Notification.findOne({
-        recipient: lead.assignedTo,
+        recipient: recipientId,
         lead: lead._id,
         type: 'missed_followup',
       });
 
       if (!alertExists) {
-        // Create notification for assignee
         await Notification.create({
           title: '🚨 Missed Follow-up / Meeting',
-          message: `You missed a scheduled follow-up for lead "${lead.name}" (${lead.phone}) scheduled on ${new Date(lead.followUpDate).toLocaleString()}`,
-          recipient: lead.assignedTo,
+          message: `Missed follow-up for lead "${lead.name}" (${lead.phone}) scheduled on ${new Date(lead.followUpDate).toISOString().split('T')[0]}`,
+          recipient: recipientId,
           lead: lead._id,
           type: 'missed_followup',
         });
@@ -48,11 +50,10 @@ export const generateMissedAlerts = async (userId, userRole) => {
 // @access  Private
 export const getNotifications = async (req, res, next) => {
   try {
-    // 1) Dynamically check and generate alerts for missed followups before listing
-    await generateMissedAlerts(req.user.id, req.user.role);
+    await generateMissedAlerts(req.user._id, req.user.role);
 
-    // 2) Fetch user notifications, ordered by latest
-    const notifications = await Notification.find({ recipient: req.user.id })
+    const notifications = await Notification.find({ recipient: req.user._id })
+      .populate('lead', 'name phone status')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -74,7 +75,7 @@ export const getNotifications = async (req, res, next) => {
 export const markAsRead = async (req, res, next) => {
   try {
     const notification = await Notification.findOneAndUpdate(
-      { _id: req.params.id, recipient: req.user.id },
+      { _id: req.params.id, recipient: req.user._id },
       { read: true },
       { new: true }
     );
