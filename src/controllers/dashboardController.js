@@ -24,7 +24,7 @@ export const getDashboardStats = async (req, res, next) => {
 
     // If staff user, restrict metrics to their own leads
     if (req.user.role === 'crmuser') {
-      query.createdBy = req.user._id;
+      query.$or = [{ createdBy: req.user._id }, { assignedTo: req.user._id }];
     } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
@@ -162,7 +162,7 @@ export const getTodayReminders = async (req, res, next) => {
     const query = {};
 
     if (req.user.role === 'crmuser') {
-      query.createdBy = req.user._id;
+      query.$or = [{ createdBy: req.user._id }, { assignedTo: req.user._id }];
     } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
@@ -208,7 +208,7 @@ export const getMissedFollowUps = async (req, res, next) => {
     const query = {};
 
     if (req.user.role === 'crmuser') {
-      query.createdBy = req.user._id;
+      query.$or = [{ createdBy: req.user._id }, { assignedTo: req.user._id }];
     } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }

@@ -89,11 +89,15 @@ export const getLeads = async (req, res, next) => {
 
     const query = {};
 
-    // 1) Security constraint: Staff representatives can only see their assigned leads
+    // 1) Security constraint
     if (['superAdmin', 'admin'].includes(req.user.role)) {
       if (assignedTo) query.assignedTo = assignedTo;
     } else if (req.user.role === 'crmuser') {
-      query.createdBy = req.user._id;
+      // crmuser can see leads they created OR leads assigned to them
+      query.$or = [
+        { createdBy: req.user._id },
+        { assignedTo: req.user._id },
+      ];
     } else {
       query.assignedTo = req.user._id;
     }
@@ -187,7 +191,7 @@ export const getLeadById = async (req, res, next) => {
     const installationRepId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
     const hasAccess =
       ['superAdmin', 'admin'].includes(req.user.role) ||
-      (req.user.role === 'crmuser' && createdById === userId) ||
+      (req.user.role === 'crmuser' && (createdById === userId || assignedId === userId)) ||
       (req.user.role === 'accountant' && lead.transferredToAccounts === true) ||
       (req.user.role === 'installation' && installationRepId === userId) ||
       assignedId === userId;
@@ -264,8 +268,12 @@ export const assignLead = async (req, res, next) => {
       throw new Error('Please provide user ID to assign this lead to');
     }
 
-    // Verify target user exists
-    const targetUser = await User.findById(userId);
+    // Verify target user exists (check both User and Admin collections)
+    let targetUser = await User.findById(userId);
+    if (!targetUser) {
+      const { Admin } = await import('../models/Admin.js');
+      targetUser = await Admin.findById(userId);
+    }
     if (!targetUser) {
       res.status(404);
       throw new Error('User to assign lead to not found');
