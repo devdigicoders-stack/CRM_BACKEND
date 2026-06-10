@@ -64,13 +64,14 @@ export const checkPermission = (panel) => {
     // superAdmin has access to everything
     if (req.user.role === 'superAdmin') return next();
 
-    // Non-admin users (sales, calling, etc.) don't use panel permissions
+    // Only admin role needs panel-level permission check
+    // All other roles (sales, calling, accountant, installation, etc.) pass through freely
     if (req.user.role !== 'admin') return next();
 
-    // Admin must have the specific panel permission
+    // Admin must have the specific panel permission assigned by superAdmin
     if (!req.user.permissions || !req.user.permissions.includes(panel)) {
       res.status(403);
-      return next(new Error(`You do not have access to the ${panel} panel`));
+      return next(new Error(`Access denied. You do not have permission for the '${panel}' panel. Contact Super Admin to grant access.`));
     }
 
     next();
