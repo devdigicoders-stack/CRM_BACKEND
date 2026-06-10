@@ -52,8 +52,10 @@ apiRouter.post('/users', protect, restrictTo('superAdmin', 'admin'), checkPermis
 apiRouter.get('/users', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.getUsers);
 apiRouter.get('/users/:id', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.getUserById);
 apiRouter.put('/users/:id', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.updateUser);
+apiRouter.put('/users/:id/password', protect, restrictTo('superAdmin'), userController.updateUserPassword);
 apiRouter.put('/users/:id/toggle-status', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.toggleUserStatus);
 apiRouter.put('/users/:id/permissions', protect, restrictTo('superAdmin'), userController.updateUserPermissions);
+apiRouter.delete('/users/:id', protect, restrictTo('superAdmin'), userController.deleteUser);
 
 // --- Calendar Routes ---
 apiRouter.get('/calendar', protect, calendarController.getCalendarLeads);

@@ -307,6 +307,72 @@ export const updateUserPermissions = async (req, res, next) => {
   }
 };
 
+// @desc    Update user password (SuperAdmin only)
+// @route   PUT /api/v1/users/:id/password
+// @access  Private (Super Admin only)
+export const updateUserPassword = async (req, res, next) => {
+  try {
+    const { newPassword } = req.body;
+
+    if (!newPassword) {
+      res.status(400);
+      throw new Error('Please provide newPassword');
+    }
+
+    let user = await Admin.findById(req.params.id).select('+password');
+    if (!user) user = await User.findById(req.params.id).select('+password');
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Password updated successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delete a user (SuperAdmin only)
+// @route   DELETE /api/v1/users/:id
+// @access  Private (Super Admin only)
+export const deleteUser = async (req, res, next) => {
+  try {
+    let user = await Admin.findById(req.params.id);
+    let isAdminCollection = true;
+
+    if (!user) {
+      user = await User.findById(req.params.id);
+      isAdminCollection = false;
+    }
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    if (user.role === 'superAdmin') {
+      res.status(403);
+      throw new Error('Super Admin account cannot be deleted');
+    }
+
+    await (isAdminCollection ? Admin : User).findByIdAndDelete(req.params.id);
+
+    res.status(200).json({
+      status: 'success',
+      message: 'User deleted successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @route   PUT /api/v1/users/:id/toggle-status
 // @access  Private (Super Admin and Admin only)
 export const toggleUserStatus = async (req, res, next) => {
