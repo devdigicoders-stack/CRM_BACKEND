@@ -50,6 +50,7 @@ apiRouter.put('/settings', protect, restrictTo('superAdmin', 'admin'), checkPerm
 // --- User Management Routes ---
 apiRouter.post('/users', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.createUser);
 apiRouter.get('/users', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.getUsers);
+apiRouter.get('/users/:id', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.getUserById);
 apiRouter.put('/users/:id', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.updateUser);
 apiRouter.put('/users/:id/toggle-status', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.toggleUserStatus);
 apiRouter.put('/users/:id/permissions', protect, restrictTo('superAdmin'), userController.updateUserPermissions);

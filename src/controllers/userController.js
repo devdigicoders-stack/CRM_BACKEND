@@ -64,6 +64,30 @@ export const createUser = async (req, res, next) => {
   }
 };
 
+// @desc    Get a single user by ID
+// @route   GET /api/v1/users/:id
+// @access  Private (Super Admin and Admin only)
+export const getUserById = async (req, res, next) => {
+  try {
+    let user = await Admin.findById(req.params.id).lean();
+    if (!user) user = await User.findById(req.params.id).lean();
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    user.password = undefined;
+
+    res.status(200).json({
+      status: 'success',
+      data: { user },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Get all users (searches both collections dynamically and merges)
 // @route   GET /api/v1/users
 // @access  Private (Super Admin and Admin only)
