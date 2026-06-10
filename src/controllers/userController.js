@@ -84,6 +84,24 @@ export const getSalesUsers = async (req, res, next) => {
   }
 };
 
+// @desc    Get installation users (for accountant to assign installer)
+// @route   GET /api/v1/users/installers
+// @access  Private (superAdmin, admin, accountant)
+export const getInstallers = async (req, res, next) => {
+  try {
+    const users = await User.find({ role: 'installation', active: true })
+      .select('name email phone role')
+      .lean();
+
+    res.status(200).json({
+      status: 'success',
+      data: { users },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Get a single user by ID
 // @route   GET /api/v1/users/:id
 // @access  Private (Super Admin and Admin only)
