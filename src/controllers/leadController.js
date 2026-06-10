@@ -182,12 +182,14 @@ export const getLeadById = async (req, res, next) => {
     }
 
     const userId = req.user._id.toString();
+    const createdById = lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString();
     const assignedId = lead.assignedTo?._id ? lead.assignedTo._id.toString() : lead.assignedTo?.toString();
+    const installationRepId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
     const hasAccess =
       ['superAdmin', 'admin'].includes(req.user.role) ||
-      (req.user.role === 'crmuser' && lead.createdBy?.toString() === userId) ||
+      (req.user.role === 'crmuser' && createdById === userId) ||
       (req.user.role === 'accountant' && lead.transferredToAccounts === true) ||
-      (req.user.role === 'installation' && lead.installationRep?.toString() === userId) ||
+      (req.user.role === 'installation' && installationRepId === userId) ||
       assignedId === userId;
 
     if (!hasAccess) {
@@ -222,7 +224,7 @@ export const updateLead = async (req, res, next) => {
 
     const canUpdate =
       ['superAdmin', 'admin'].includes(req.user.role) ||
-      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canUpdate) {
       res.status(403);
@@ -277,7 +279,7 @@ export const assignLead = async (req, res, next) => {
 
     const canAssign =
       ['superAdmin', 'admin'].includes(req.user.role) ||
-      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canAssign) {
       res.status(403);
@@ -335,7 +337,7 @@ export const addRemark = async (req, res, next) => {
 
     const canRemark =
       ['superAdmin', 'admin'].includes(req.user.role) ||
-      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canRemark) {
       res.status(403);
@@ -421,7 +423,7 @@ export const updateSaleDetails = async (req, res, next) => {
 
     const canModifySale =
       ['superAdmin', 'admin'].includes(req.user.role) ||
-      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canModifySale) {
       res.status(403);
@@ -468,7 +470,7 @@ export const uploadSaleDocuments = async (req, res, next) => {
 
     const canUploadDoc =
       ['superAdmin', 'admin'].includes(req.user.role) ||
-      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canUploadDoc) {
       res.status(403);
@@ -510,7 +512,7 @@ export const transferToAccounts = async (req, res, next) => {
 
     const canTransfer =
       ['superAdmin', 'admin'].includes(req.user.role) ||
-      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canTransfer) {
       res.status(403);
@@ -555,7 +557,7 @@ export const updateDeliveryStatus = async (req, res, next) => {
 
     const canUpdateDelivery =
       ['superAdmin', 'admin'].includes(req.user.role) ||
-      (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString()) ||
+      (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canUpdateDelivery) {
       res.status(403);
