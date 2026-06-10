@@ -192,6 +192,14 @@ export const getLeadById = async (req, res, next) => {
       (req.user.role === 'installation' && lead.installationRep?.toString() === req.user._id.toString()) ||
       (req.user.role === 'crmuser' && lead.createdBy?.toString() === req.user._id.toString());
 
+    console.log('DEBUG:', {
+      userRole: req.user.role,
+      userId: req.user._id.toString(),
+      leadCreatedBy: lead.createdBy?.toString(),
+      leadAssignedTo: lead.assignedTo?.toString(),
+      isSpecialAccess,
+    });
+
     const assignedId = lead.assignedTo?._id ? lead.assignedTo._id.toString() : lead.assignedTo?.toString();
     if (!isSpecialAccess && assignedId !== req.user._id.toString()) {
       res.status(403);
