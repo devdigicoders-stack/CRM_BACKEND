@@ -21,7 +21,7 @@ export const getCalendarLeads = async (req, res, next) => {
 
     // Access control: Staff members can only view their own followups
     if (!['superAdmin', 'admin'].includes(req.user.role)) {
-      query.assignedTo = req.user.id;
+      query.assignedTo = req.user._id;
     }
 
     const leads = await Lead.find(query)
