@@ -2,14 +2,26 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { Lead } from '../models/Lead.js';
+import { User } from '../models/User.js';
+import { Admin } from '../models/Admin.js';
+import { Notification } from '../models/Notification.js';
+import { sendPushNotification } from '../config/firebase.js';
 
-// Configure multer storage for invoices
+const sendNotification = async (recipientId, title, message, leadId) => {
+  try {
+    await Notification.create({ title, message, recipient: recipientId, lead: leadId, type: 'general' });
+    let recipient = await User.findById(recipientId).select('fcmToken').lean();
+    if (!recipient) recipient = await Admin.findById(recipientId).select('fcmToken').lean();
+    if (recipient?.fcmToken) await sendPushNotification(recipient.fcmToken, title, message, { leadId: leadId?.toString() });
+  } catch (err) {
+    console.error('Notification error:', err.message);
+  }
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = 'public/uploads/invoices';
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
   filename: (req, file, cb) => {
@@ -20,26 +32,19 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
-  const ext = path.extname(file.originalname).toLowerCase();
-  if (allowedExtensions.includes(ext)) {
+  if (allowedExtensions.includes(path.extname(file.originalname).toLowerCase())) {
     cb(null, true);
   } else {
     cb(new Error('Only PDF and image files are allowed for invoice'), false);
   }
 };
 
-export const uploadInvoiceMiddleware = multer({
-  storage,
-  fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
-}).single('invoice');
+export const uploadInvoiceMiddleware = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024 } }).single('invoice');
 
-// Helper to format lead response with helper integration links
 const formatLeadWithIntegrations = (lead) => {
   const leadObj = lead.toObject ? lead.toObject() : lead;
   const cleanedPhone = leadObj.phone.replace(/\D/g, '');
   const phoneWithCountry = cleanedPhone.length === 10 ? `91${cleanedPhone}` : cleanedPhone;
-
   return {
     ...leadObj,
     integrations: {
@@ -49,71 +54,33 @@ const formatLeadWithIntegrations = (lead) => {
   };
 };
 
-// @desc    Get accountant dashboard statistics overview
-// @route   GET /api/v1/accounts/dashboard
-// @access  Private (Admins and Accountants only)
+const statsKeyExists = (key, obj) => Object.prototype.hasOwnProperty.call(obj, key);
+
 export const getAccountDashboard = async (req, res, next) => {
   try {
-    // Closed Won leads query (status is converted or closed, and transferred to accounts)
     const baseQuery = { status: { $in: ['converted', 'closed'] }, transferredToAccounts: true };
-
     const totalClosedWon = await Lead.countDocuments(baseQuery);
-    
-    const pendingVerification = await Lead.countDocuments({
-      ...baseQuery,
-      verificationStatus: 'pending'
-    });
-
-    const verifiedSales = await Lead.countDocuments({
-      ...baseQuery,
-      verificationStatus: 'verified'
-    });
-
-    const rejectedSales = await Lead.countDocuments({
-      ...baseQuery,
-      verificationStatus: 'rejected'
-    });
-
+    const pendingVerification = await Lead.countDocuments({ ...baseQuery, verificationStatus: 'pending' });
+    const verifiedSales = await Lead.countDocuments({ ...baseQuery, verificationStatus: 'verified' });
+    const rejectedSales = await Lead.countDocuments({ ...baseQuery, verificationStatus: 'rejected' });
     const paymentStatusBreakdown = await Lead.aggregate([
       { $match: baseQuery },
       { $group: { _id: '$paymentStatus', count: { $sum: 1 } } }
     ]);
-
     const paymentStats = { pending: 0, partial: 0, completed: 0 };
     paymentStatusBreakdown.forEach((item) => {
-      if (item._id && statsKeyExists(item._id, paymentStats)) {
-        paymentStats[item._id] = item.count;
-      }
+      if (item._id && statsKeyExists(item._id, paymentStats)) paymentStats[item._id] = item.count;
     });
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        totalClosedWon,
-        pendingVerification,
-        verifiedSales,
-        rejectedSales,
-        paymentStatusBreakdown: paymentStats
-      }
-    });
+    res.status(200).json({ status: 'success', data: { totalClosedWon, pendingVerification, verifiedSales, rejectedSales, paymentStatusBreakdown: paymentStats } });
   } catch (error) {
     next(error);
   }
 };
 
-const statsKeyExists = (key, obj) => {
-  return Object.prototype.hasOwnProperty.call(obj, key);
-};
-
-// @desc    View Closed Won Leads (received from sales team)
-// @route   GET /api/v1/accounts/leads
-// @access  Private (Admins and Accountants only)
 export const getClosedWonLeads = async (req, res, next) => {
   try {
     const { search, verificationStatus, paymentStatus, page = 1, limit = 20 } = req.query;
-
     const query = { status: { $in: ['converted', 'closed'] }, transferredToAccounts: true };
-
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -121,19 +88,11 @@ export const getClosedWonLeads = async (req, res, next) => {
         { email: { $regex: search, $options: 'i' } }
       ];
     }
-
-    if (verificationStatus) {
-      query.verificationStatus = verificationStatus;
-    }
-
-    if (paymentStatus) {
-      query.paymentStatus = paymentStatus;
-    }
-
+    if (verificationStatus) query.verificationStatus = verificationStatus;
+    if (paymentStatus) query.paymentStatus = paymentStatus;
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
     const skipNum = (pageNum - 1) * limitNum;
-
     const total = await Lead.countDocuments(query);
     const leads = await Lead.find(query)
       .populate('assignedTo', 'name email role')
@@ -142,242 +101,157 @@ export const getClosedWonLeads = async (req, res, next) => {
       .skip(skipNum)
       .limit(limitNum)
       .lean();
-
-    const formattedLeads = leads.map(formatLeadWithIntegrations);
-
-    res.status(200).json({
-      status: 'success',
-      results: formattedLeads.length,
-      total,
-      pages: Math.ceil(total / limitNum),
-      currentPage: pageNum,
-      data: {
-        leads: formattedLeads
-      }
-    });
+    res.status(200).json({ status: 'success', results: leads.length, total, pages: Math.ceil(total / limitNum), currentPage: pageNum, data: { leads: leads.map(formatLeadWithIntegrations) } });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Approve/Verify or Reject Sale
-// @route   PUT /api/v1/accounts/leads/:id/verify
-// @access  Private (Admins and Accountants only)
 export const verifySale = async (req, res, next) => {
   try {
     const { verificationStatus, remarks } = req.body;
-
     if (!verificationStatus || !['verified', 'rejected'].includes(verificationStatus)) {
       res.status(400);
       throw new Error('Please provide a valid verificationStatus (verified or rejected)');
     }
-
     const lead = await Lead.findById(req.params.id);
-    if (!lead) {
-      res.status(404);
-      throw new Error('Lead not found');
-    }
-
-    // Verify lead was closed won first
+    if (!lead) { res.status(404); throw new Error('Lead not found'); }
     if (!['converted', 'closed'].includes(lead.status)) {
       res.status(400);
       throw new Error('Only closed won (converted/closed) sales can be verified');
     }
-
     lead.verificationStatus = verificationStatus;
-    if (remarks) {
-      lead.accountRemarks = remarks;
-    }
-
-    // Add remark entry
+    if (remarks) lead.accountRemarks = remarks;
     lead.remarks.push({
       note: `[Accounts Team] Sale ${verificationStatus === 'verified' ? 'Approved & Verified' : 'Rejected'}. Remarks: ${remarks || 'None'}`,
       addedBy: req.user._id
     });
-
-    // If rejected, send back to sales team
     if (verificationStatus === 'rejected') {
       lead.status = 'assigned';
-      lead.transferredToAccounts = false; // Remove from accounts panel so sales team can handle it
+      lead.transferredToAccounts = false;
     }
-
     const updatedLead = await lead.save();
 
-    res.status(200).json({
-      status: 'success',
-      data: {
-        lead: formatLeadWithIntegrations(updatedLead)
-      }
-    });
+    // Notify sales rep
+    if (lead.assignedTo) {
+      await sendNotification(
+        lead.assignedTo,
+        verificationStatus === 'verified' ? '✅ Sale Approved' : '❌ Sale Rejected',
+        `Lead "${lead.name}" ki sale ${verificationStatus === 'verified' ? 'approve' : 'reject'} ho gayi. Remarks: ${remarks || 'None'}`,
+        lead._id
+      );
+    }
+
+    res.status(200).json({ status: 'success', data: { lead: formatLeadWithIntegrations(updatedLead) } });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Upload Invoice for a verified sale
-// @route   PUT /api/v1/accounts/leads/:id/invoice
-// @access  Private (Admins and Accountants only)
 export const uploadInvoice = async (req, res, next) => {
   try {
-    if (!req.file) {
-      res.status(400);
-      throw new Error('Please upload an invoice file');
-    }
-
+    if (!req.file) { res.status(400); throw new Error('Please upload an invoice file'); }
     const lead = await Lead.findById(req.params.id);
-    if (!lead) {
-      res.status(404);
-      throw new Error('Lead not found');
-    }
-
-    // Convert local filepath to web url/path
-    const relativePath = `/uploads/invoices/${req.file.filename}`;
-    lead.invoiceUrl = relativePath;
-
-    // Add remark entry
-    lead.remarks.push({
-      note: `[Accounts Team] Invoice uploaded. File: ${req.file.originalname}`,
-      addedBy: req.user._id
-    });
-
+    if (!lead) { res.status(404); throw new Error('Lead not found'); }
+    lead.invoiceUrl = `/uploads/invoices/${req.file.filename}`;
+    lead.remarks.push({ note: `[Accounts Team] Invoice uploaded. File: ${req.file.originalname}`, addedBy: req.user._id });
     const updatedLead = await lead.save();
 
-    res.status(200).json({
-      status: 'success',
-      data: {
-        lead: formatLeadWithIntegrations(updatedLead)
-      }
-    });
+    // Notify sales rep about invoice
+    if (lead.assignedTo) {
+      await sendNotification(lead.assignedTo, '🧾 Invoice Uploaded', `Lead "${lead.name}" ke liye invoice upload ho gayi`, lead._id);
+    }
+
+    res.status(200).json({ status: 'success', data: { lead: formatLeadWithIntegrations(updatedLead) } });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Update Payment Mode, Payment Status & Add Transaction Details
-// @route   PUT /api/v1/accounts/leads/:id/payment
-// @access  Private (Admins and Accountants only)
 export const updatePaymentAndTransaction = async (req, res, next) => {
   try {
     const { paymentMode, paymentStatus, transactionDetails } = req.body;
-
     const lead = await Lead.findById(req.params.id);
-    if (!lead) {
-      res.status(404);
-      throw new Error('Lead not found');
-    }
-
+    if (!lead) { res.status(404); throw new Error('Lead not found'); }
     if (paymentMode) {
       if (!['cash', 'cod', 'dp', 'emi'].includes(paymentMode.toLowerCase())) {
-        res.status(400);
-        throw new Error('Invalid paymentMode. Allowed: cash, cod, dp, emi');
+        res.status(400); throw new Error('Invalid paymentMode. Allowed: cash, cod, dp, emi');
       }
       lead.paymentMode = paymentMode.toLowerCase();
     }
-
     if (paymentStatus) {
       if (!['pending', 'partial', 'completed'].includes(paymentStatus.toLowerCase())) {
-        res.status(400);
-        throw new Error('Invalid paymentStatus. Allowed: pending, partial, completed');
+        res.status(400); throw new Error('Invalid paymentStatus. Allowed: pending, partial, completed');
       }
       lead.paymentStatus = paymentStatus.toLowerCase();
     }
-
-    if (transactionDetails) {
-      lead.transactionDetails = transactionDetails;
-    }
-
-    // Add remark entry
+    if (transactionDetails) lead.transactionDetails = transactionDetails;
     lead.remarks.push({
       note: `[Accounts Team] Payment/Transaction updated (Mode: ${lead.paymentMode || 'N/A'}, Status: ${lead.paymentStatus || 'N/A'})`,
       addedBy: req.user._id
     });
-
     const updatedLead = await lead.save();
 
-    res.status(200).json({
-      status: 'success',
-      data: {
-        lead: formatLeadWithIntegrations(updatedLead)
-      }
-    });
+    // Notify sales rep
+    if (lead.assignedTo) {
+      await sendNotification(
+        lead.assignedTo,
+        '💳 Payment Updated',
+        `Lead "${lead.name}" ka payment update hua. Mode: ${lead.paymentMode || 'N/A'}, Status: ${lead.paymentStatus || 'N/A'}`,
+        lead._id
+      );
+    }
+
+    res.status(200).json({ status: 'success', data: { lead: formatLeadWithIntegrations(updatedLead) } });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Add Tracking ID
-// @route   PUT /api/v1/accounts/leads/:id/tracking
-// @access  Private (Admins and Accountants only)
 export const updateTrackingId = async (req, res, next) => {
   try {
     const { trackingId } = req.body;
-
-    if (!trackingId) {
-      res.status(400);
-      throw new Error('Please provide trackingId');
-    }
-
+    if (!trackingId) { res.status(400); throw new Error('Please provide trackingId'); }
     const lead = await Lead.findById(req.params.id);
-    if (!lead) {
-      res.status(404);
-      throw new Error('Lead not found');
-    }
-
+    if (!lead) { res.status(404); throw new Error('Lead not found'); }
     lead.trackingId = trackingId;
-
-    // Add remark entry
-    lead.remarks.push({
-      note: `[Accounts Team] Tracking ID updated: ${trackingId}`,
-      addedBy: req.user._id
-    });
-
+    lead.remarks.push({ note: `[Accounts Team] Tracking ID updated: ${trackingId}`, addedBy: req.user._id });
     const updatedLead = await lead.save();
 
-    res.status(200).json({
-      status: 'success',
-      data: {
-        lead: formatLeadWithIntegrations(updatedLead)
-      }
-    });
+    // Notify sales rep about tracking ID
+    if (lead.assignedTo) {
+      await sendNotification(lead.assignedTo, '📦 Tracking ID Updated', `Lead "${lead.name}" ka tracking ID update hua: ${trackingId}`, lead._id);
+    }
+
+    res.status(200).json({ status: 'success', data: { lead: formatLeadWithIntegrations(updatedLead) } });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Transfer Verified Leads to Installation Team
-// @route   PUT /api/v1/accounts/leads/:id/transfer
-// @access  Private (Admins and Accountants only)
 export const transferToInstallation = async (req, res, next) => {
   try {
     const lead = await Lead.findById(req.params.id);
-    if (!lead) {
-      res.status(404);
-      throw new Error('Lead not found');
-    }
-
-    // Verify lead is verified before transfer
+    if (!lead) { res.status(404); throw new Error('Lead not found'); }
     if (lead.verificationStatus !== 'verified') {
-      res.status(400);
-      throw new Error('Lead must be approved/verified before transferring to Installation Team');
+      res.status(400); throw new Error('Lead must be approved/verified before transferring to Installation Team');
     }
-
     lead.transferredToInstallation = true;
-    lead.status = 'in_process'; // Mark as in-process so superadmin can track it's with installation
-
-    // Add remark entry
-    lead.remarks.push({
-      note: `[Accounts Team] Verified Lead transferred to Installation Team.`,
-      addedBy: req.user._id
-    });
-
+    lead.status = 'in_process';
+    lead.remarks.push({ note: `[Accounts Team] Verified Lead transferred to Installation Team.`, addedBy: req.user._id });
     const updatedLead = await lead.save();
 
-    res.status(200).json({
-      status: 'success',
-      data: {
-        lead: formatLeadWithIntegrations(updatedLead)
-      }
-    });
+    // Notify admins
+    const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+    for (const admin of admins) {
+      await sendNotification(admin._id, '🔧 Lead Transferred to Installation', `Lead "${lead.name}" installation team ko transfer ho gayi`, lead._id);
+    }
+    // Notify installation rep if already assigned
+    if (lead.installationRep) {
+      await sendNotification(lead.installationRep, '🔧 New Installation Lead', `Lead "${lead.name}" (${lead.phone}) aapko installation ke liye assign ki gayi hai`, lead._id);
+    }
+
+    res.status(200).json({ status: 'success', data: { lead: formatLeadWithIntegrations(updatedLead) } });
   } catch (error) {
     next(error);
   }

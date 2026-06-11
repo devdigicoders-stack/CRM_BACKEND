@@ -18,6 +18,9 @@ export const createNotificationAndSendPush = async ({ recipientId, title, messag
     let recipient = await User.findById(recipientId).select('fcmToken').lean();
     if (!recipient) recipient = await Admin.findById(recipientId).select('fcmToken').lean();
 
+    console.log(`[Notification] Recipient found:`, recipient ? 'YES' : 'NO');
+    console.log(`[Notification] FCM Token:`, recipient?.fcmToken ? recipient.fcmToken.substring(0, 20) + '...' : 'NOT FOUND ❌');
+
     if (recipient?.fcmToken) {
       await sendPushNotification(
         recipient.fcmToken,
@@ -25,6 +28,8 @@ export const createNotificationAndSendPush = async ({ recipientId, title, messag
         message,
         { leadId: leadId ? leadId.toString() : '', type: type || 'general' }
       );
+    } else {
+      console.warn(`[Notification] ⚠️ No FCM token for recipientId: ${recipientId} — push skipped`);
     }
   } catch (error) {
     console.error('Error in createNotificationAndSendPush:', error.message);

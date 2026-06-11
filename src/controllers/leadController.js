@@ -3,6 +3,20 @@ import path from 'path';
 import fs from 'fs';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
+import { Admin } from '../models/Admin.js';
+import { Notification } from '../models/Notification.js';
+import { sendPushNotification } from '../config/firebase.js';
+
+const sendNotification = async (recipientId, title, message, leadId) => {
+  try {
+    await Notification.create({ title, message, recipient: recipientId, lead: leadId, type: 'general' });
+    let recipient = await User.findById(recipientId).select('fcmToken').lean();
+    if (!recipient) recipient = await Admin.findById(recipientId).select('fcmToken').lean();
+    if (recipient?.fcmToken) await sendPushNotification(recipient.fcmToken, title, message, { leadId: leadId?.toString() });
+  } catch (err) {
+    console.error('Notification error:', err.message);
+  }
+};
 
 // Helper to format lead response with helper integration links
 const formatLeadWithIntegrations = (lead) => {
@@ -68,6 +82,11 @@ export const createLead = async (req, res, next) => {
     }
 
     const lead = await Lead.create(leadData);
+
+    // Notify assignee if lead is directly assigned on creation
+    if (finalAssignedTo) {
+      await sendNotification(finalAssignedTo, '📋 New Lead Assigned', `Lead "${lead.name}" (${lead.phone}) aapko assign ki gayi hai by ${req.user.name}`, lead._id);
+    }
 
     res.status(201).json({
       status: 'success',
@@ -320,18 +339,7 @@ export const assignLead = async (req, res, next) => {
     const updatedLead = await lead.save();
 
     // Send assignment notification
-    try {
-      const { createNotificationAndSendPush } = await import('./notificationController.js');
-      await createNotificationAndSendPush({
-        recipientId: userId,
-        title: '📋 New Lead Assigned',
-        message: `You have been assigned a new lead: "${updatedLead.name}".`,
-        leadId: updatedLead._id,
-        type: 'general',
-      });
-    } catch (err) {
-      console.error('Failed to send lead assignment notification:', err.message);
-    }
+    await sendNotification(userId, '📋 New Lead Assigned', `Lead "${updatedLead.name}" (${updatedLead.phone}) aapko assign ki gayi hai by ${req.user.name}`, updatedLead._id);
 
     res.status(200).json({
       status: 'success',
@@ -468,6 +476,12 @@ export const updateSaleDetails = async (req, res, next) => {
 
     const updatedLead = await lead.save();
 
+    // Notify admins about sale details update
+    const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+    for (const admin of admins) {
+      await sendNotification(admin._id, '💰 Sale Details Updated', `Lead "${lead.name}" ke sale details update hue (Product: ${productDetails || 'N/A'}, Deal Value: ${dealValue !== undefined ? dealValue : 'N/A'}) by ${req.user.name}`, lead._id);
+    }
+
     res.status(200).json({
       status: 'success',
       data: {
@@ -515,6 +529,12 @@ export const uploadSaleDocuments = async (req, res, next) => {
 
     const updatedLead = await lead.save();
 
+    // Notify admins about uploaded sale document
+    const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+    for (const admin of admins) {
+      await sendNotification(admin._id, '📄 Sale Document Uploaded', `Lead "${lead.name}" ke liye sale document upload hua by ${req.user.name}`, lead._id);
+    }
+
     res.status(200).json({
       status: 'success',
       data: {
@@ -559,6 +579,12 @@ export const transferToAccounts = async (req, res, next) => {
     });
 
     const updatedLead = await lead.save();
+
+    // Notify all admins about new sale
+    const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+    for (const admin of admins) {
+      await sendNotification(admin._id, '💰 New Sale Confirmed', `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko transfer ho gayi by ${req.user.name}`, lead._id);
+    }
 
     res.status(200).json({
       status: 'success',
@@ -612,6 +638,14 @@ export const updateDeliveryStatus = async (req, res, next) => {
     });
 
     const updatedLead = await lead.save();
+
+    // Notify admins about delivery status update
+    if (deliveryStatus) {
+      const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+      for (const admin of admins) {
+        await sendNotification(admin._id, '📦 Delivery Status Updated', `Lead "${lead.name}" ka delivery status: ${lead.deliveryStatus.toUpperCase()} by ${req.user.name}`, lead._id);
+      }
+    }
 
     res.status(200).json({
       status: 'success',

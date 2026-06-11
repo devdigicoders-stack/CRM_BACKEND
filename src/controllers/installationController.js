@@ -4,6 +4,20 @@ import fs from 'fs';
 import mongoose from 'mongoose';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
+import { Admin } from '../models/Admin.js';
+import { Notification } from '../models/Notification.js';
+import { sendPushNotification } from '../config/firebase.js';
+
+const sendNotification = async (recipientId, title, message, leadId) => {
+  try {
+    await Notification.create({ title, message, recipient: recipientId, lead: leadId, type: 'general' });
+    let recipient = await User.findById(recipientId).select('fcmToken').lean();
+    if (!recipient) recipient = await Admin.findById(recipientId).select('fcmToken').lean();
+    if (recipient?.fcmToken) await sendPushNotification(recipient.fcmToken, title, message, { leadId: leadId?.toString() });
+  } catch (err) {
+    console.error('Notification error:', err.message);
+  }
+};
 
 // Configure multer storage for installation proofs
 const storage = multer.diskStorage({
@@ -184,6 +198,14 @@ export const assignInstallationRep = async (req, res, next) => {
       { new: true, runValidators: true }
     );
 
+    // Notify installer
+    await sendNotification(
+      installerId,
+      '🔧 Installation Lead Assigned',
+      `Lead "${updatedLead.name}" (${updatedLead.phone}) aapko assign ki gayi hai installation ke liye`,
+      updatedLead._id
+    );
+
     res.status(200).json({
       status: 'success',
       data: { lead: formatLeadWithIntegrations(updatedLead) }
@@ -232,6 +254,22 @@ export const updateInstallationStatus = async (req, res, next) => {
 
     const updatedLead = await lead.save();
 
+    // Notify on status changes
+    if (normalizedStatus === 'in_progress') {
+      const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+      for (const admin of admins) {
+        await sendNotification(admin._id, '🔧 Installation In Progress', `Lead "${lead.name}" ki installation shuru ho gayi by ${req.user.name}`, lead._id);
+      }
+    } else if (normalizedStatus === 'completed') {
+      const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+      for (const admin of admins) {
+        await sendNotification(admin._id, '✅ Installation Completed', `Lead "${lead.name}" ki installation complete ho gayi by ${req.user.name}`, lead._id);
+      }
+      if (lead.assignedTo) {
+        await sendNotification(lead.assignedTo, '✅ Installation Completed', `Lead "${lead.name}" ki installation complete ho gayi`, lead._id);
+      }
+    }
+
     res.status(200).json({
       status: 'success',
       data: { lead: formatLeadWithIntegrations(updatedLead) }
@@ -272,6 +310,15 @@ export const uploadInstallationProof = async (req, res, next) => {
 
     const updatedLead = await lead.save();
 
+    // Notify admins and sales rep about proof upload
+    const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+    for (const admin of admins) {
+      await sendNotification(admin._id, '📸 Installation Proof Uploaded', `Lead "${lead.name}" ke liye installation proof upload hua by ${req.user.name}`, lead._id);
+    }
+    if (lead.assignedTo) {
+      await sendNotification(lead.assignedTo, '📸 Installation Proof Uploaded', `Lead "${lead.name}" ke liye installation proof upload ho gaya`, lead._id);
+    }
+
     res.status(200).json({
       status: 'success',
       data: { lead: formatLeadWithIntegrations(updatedLead) }
@@ -307,13 +354,17 @@ export const reportInstallationIssue = async (req, res, next) => {
 
     lead.installationIssueReported = true;
     lead.installationIssueRemarks = issueRemarks;
-
     lead.remarks.push({
       note: `[Installation Team] 🚨 ISSUE/DELAY REPORTED: ${issueRemarks}`,
       addedBy: req.user._id
     });
-
     const updatedLead = await lead.save();
+
+    // Notify admins about issue
+    const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+    for (const admin of admins) {
+      await sendNotification(admin._id, '🚨 Installation Issue Reported', `Lead "${lead.name}" mein installation issue report hua: ${issueRemarks}`, lead._id);
+    }
 
     res.status(200).json({
       status: 'success',
