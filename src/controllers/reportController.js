@@ -190,3 +190,122 @@ export const exportLeadsPdf = async (req, res, next) => {
     next(error);
   }
 };
+
+// Helper for comprehensive report
+const generateAnalyticsPipeline = (matchQuery) => {
+  return [
+    { $match: matchQuery },
+    {
+      $facet: {
+        totals: [
+          {
+            $group: {
+              _id: null,
+              totalLeads: { $sum: 1 },
+              convertedLeads: {
+                $sum: { $cond: [{ $in: ['$status', ['converted', 'closed']] }, 1, 0] }
+              },
+              pendingLeads: {
+                $sum: { $cond: [{ $in: ['$status', ['new', 'assigned', 'interested', 'in_process']] }, 1, 0] }
+              },
+              totalDealValue: {
+                $sum: { $cond: [{ $in: ['$status', ['converted', 'closed']] }, '$dealValue', 0] }
+              }
+            }
+          }
+        ],
+        statusBreakdown: [
+          { $group: { _id: '$status', count: { $sum: 1 } } }
+        ],
+        sourceBreakdown: [
+          { $group: { _id: '$source', count: { $sum: 1 } } }
+        ],
+        priorityBreakdown: [
+          { $group: { _id: '$priority', count: { $sum: 1 } } }
+        ]
+      }
+    }
+  ];
+};
+
+const formatAnalyticsResult = (result) => {
+  if (!result || !result.length) return null;
+  const data = result[0];
+  const totals = data.totals[0] || { totalLeads: 0, convertedLeads: 0, pendingLeads: 0, totalDealValue: 0 };
+  
+  const statusBreakdown = {};
+  data.statusBreakdown.forEach(item => { statusBreakdown[item._id] = item.count; });
+  
+  const sourceBreakdown = {};
+  data.sourceBreakdown.forEach(item => { sourceBreakdown[item._id || 'Direct'] = item.count; });
+  
+  const priorityBreakdown = {};
+  data.priorityBreakdown.forEach(item => { priorityBreakdown[item._id] = item.count; });
+
+  return {
+    totalLeads: totals.totalLeads || 0,
+    convertedLeads: totals.convertedLeads || 0,
+    pendingLeads: totals.pendingLeads || 0,
+    totalDealValue: totals.totalDealValue || 0,
+    statusBreakdown,
+    sourceBreakdown,
+    priorityBreakdown
+  };
+};
+
+// @desc    Get Comprehensive Report Analytics
+// @route   GET /api/v1/reports/analytics
+// @access  Private (Super Admin, Admin, and Manager only)
+export const getComprehensiveReport = async (req, res, next) => {
+  try {
+    const baseQuery = getFilterQuery(req);
+    // Remove the date filter if any so we can explicitly handle the date ranges
+    delete baseQuery.createdAt;
+    delete baseQuery.followUpDate;
+
+    const now = new Date();
+    
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday as start of week
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+    const todayQuery = { ...baseQuery, createdAt: { $gte: startOfToday } };
+    const weekQuery = { ...baseQuery, createdAt: { $gte: startOfWeek } };
+    const monthQuery = { ...baseQuery, createdAt: { $gte: startOfMonth } };
+    const yearQuery = { ...baseQuery, createdAt: { $gte: startOfYear } };
+    const allTimeQuery = { ...baseQuery }; // No date restriction
+
+    // Execute parallel aggregations
+    const [todayRes, weekRes, monthRes, yearRes, allTimeRes] = await Promise.all([
+      Lead.aggregate(generateAnalyticsPipeline(todayQuery)),
+      Lead.aggregate(generateAnalyticsPipeline(weekQuery)),
+      Lead.aggregate(generateAnalyticsPipeline(monthQuery)),
+      Lead.aggregate(generateAnalyticsPipeline(yearQuery)),
+      Lead.aggregate(generateAnalyticsPipeline(allTimeQuery)),
+    ]);
+
+    const analyticsData = {
+      today: formatAnalyticsResult(todayRes),
+      thisWeek: formatAnalyticsResult(weekRes),
+      thisMonth: formatAnalyticsResult(monthRes),
+      thisYear: formatAnalyticsResult(yearRes),
+      allTime: formatAnalyticsResult(allTimeRes),
+    };
+
+    res.status(200).json({
+      status: 'success',
+      data: analyticsData
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+

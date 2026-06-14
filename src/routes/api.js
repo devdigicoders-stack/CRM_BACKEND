@@ -72,7 +72,8 @@ apiRouter.get('/calendar', protect, calendarController.getCalendarLeads);
 apiRouter.get('/notifications', protect, notificationController.getNotifications);
 apiRouter.put('/notifications/:id/read', protect, notificationController.markAsRead);
 
-// --- Report Export Routes ---
+// --- Report Routes ---
+apiRouter.get('/reports/analytics', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('reports'), reportController.getComprehensiveReport);
 apiRouter.get('/reports/export/excel', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('reports'), reportController.exportLeadsExcel);
 apiRouter.get('/reports/export/pdf', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('reports'), reportController.exportLeadsPdf);
 
