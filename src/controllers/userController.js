@@ -1,5 +1,7 @@
+import mongoose from 'mongoose';
 import { Admin } from '../models/Admin.js';
 import { User } from '../models/User.js';
+import { Lead } from '../models/Lead.js';
 
 const VALID_PERMISSIONS = ['leads', 'accounts', 'installation', 'reports', 'settings', 'users', 'dashboard'];
 
@@ -471,6 +473,193 @@ export const registerFcmToken = async (req, res, next) => {
     res.status(200).json({
       status: 'success',
       message: 'FCM token registered successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get detailed lead activity history of a single user
+// @route   GET /api/v1/users/:id/history
+// @access  Private (Super Admin and Admin only)
+export const getUserHistory = async (req, res, next) => {
+  try {
+    const userId = req.params.id;
+
+    // Verify target user exists
+    let targetUser = await Admin.findById(userId).select('-password').lean();
+    if (!targetUser) {
+      targetUser = await User.findById(userId).select('-password').lean();
+    }
+
+    if (!targetUser) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    // Dates for statistics
+    const now = new Date();
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+
+    // Stats queries for leads assigned to this user
+    const totalLeads = await Lead.countDocuments({ assignedTo: userId });
+    const convertedLeads = await Lead.countDocuments({ assignedTo: userId, status: { $in: ['converted', 'closed'] } });
+    const pendingLeads = await Lead.countDocuments({ assignedTo: userId, status: { $in: ['new', 'assigned', 'interested', 'in_process'] } });
+    const missedFollowUps = await Lead.countDocuments({
+      assignedTo: userId,
+      followUpDate: { $lt: startOfToday },
+      status: { $nin: ['converted', 'closed'] }
+    });
+
+    const statusBreakdown = await Lead.aggregate([
+      { $match: { assignedTo: new mongoose.Types.ObjectId(userId) } },
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ]);
+
+    const statsByStatus = { new: 0, assigned: 0, interested: 0, in_process: 0, not_interested: 0, converted: 0, closed: 0 };
+    statusBreakdown.forEach((item) => {
+      if (item._id) statsByStatus[item._id] = item.count;
+    });
+
+    // Fetch detailed list of assigned leads
+    const leadsList = await Lead.find({ assignedTo: userId })
+      .populate('createdBy', 'name email')
+      .populate('assignedBy', 'name email role')
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    // Query remarks added by this user (activity log)
+    const leadsWithRemarks = await Lead.find({ 'remarks.addedBy': userId })
+      .select('name phone email status remarks')
+      .lean();
+
+    const activityLog = [];
+    leadsWithRemarks.forEach((lead) => {
+      lead.remarks.forEach((remark) => {
+        if (remark.addedBy && remark.addedBy.toString() === userId.toString()) {
+          activityLog.push({
+            leadId: lead._id,
+            leadName: lead.name,
+            leadPhone: lead.phone,
+            leadStatus: lead.status,
+            remarkId: remark._id,
+            note: remark.note,
+            createdAt: remark.createdAt
+          });
+        }
+      });
+    });
+
+    // Sort activity log chronologically descending
+    activityLog.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        profile: targetUser,
+        statistics: {
+          totalLeads,
+          convertedLeads,
+          pendingLeads,
+          missedFollowUps,
+          statusBreakdown: statsByStatus
+        },
+        leads: leadsList,
+        activityLog
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get tracking/activity summary overview of all users
+// @route   GET /api/v1/users/tracking/summary
+// @access  Private (Super Admin and Admin only)
+export const getUsersTrackingSummary = async (req, res, next) => {
+  try {
+    // 1) Fetch all users and admins
+    const users = await User.find({}).select('name email role phone active profilePic').lean();
+    const admins = await Admin.find({}).select('name email role phone active profilePic').lean();
+    const allUsers = [...admins, ...users];
+
+    // 2) Get lead stats breakdown grouped by assignedTo
+    const statsGrouped = await Lead.aggregate([
+      {
+        $group: {
+          _id: '$assignedTo',
+          totalLeads: { $sum: 1 },
+          convertedLeads: {
+            $sum: {
+              $cond: [{ $in: ['$status', ['converted', 'closed']] }, 1, 0]
+            }
+          },
+          pendingLeads: {
+            $sum: {
+              $cond: [{ $in: ['$status', ['new', 'assigned', 'interested', 'in_process']] }, 1, 0]
+            }
+          }
+        }
+      }
+    ]);
+
+    // Create a lookup map for assigned stats
+    const statsMap = {};
+    statsGrouped.forEach((stat) => {
+      if (stat._id) {
+        statsMap[stat._id.toString()] = {
+          totalLeads: stat.totalLeads,
+          convertedLeads: stat.convertedLeads,
+          pendingLeads: stat.pendingLeads
+        };
+      }
+    });
+
+    // 3) Get remarks activity stats
+    const remarksActivity = await Lead.aggregate([
+      { $unwind: '$remarks' },
+      {
+        $group: {
+          _id: '$remarks.addedBy',
+          totalRemarks: { $sum: 1 },
+          latestRemarkDate: { $max: '$remarks.createdAt' }
+        }
+      }
+    ]);
+
+    // Create a lookup map for remarks activity
+    const remarksMap = {};
+    remarksActivity.forEach((act) => {
+      if (act._id) {
+        remarksMap[act._id.toString()] = {
+          totalRemarks: act.totalRemarks,
+          latestRemarkDate: act.latestRemarkDate
+        };
+      }
+    });
+
+    // Merge everything into the allUsers list
+    const summary = allUsers.map((u) => {
+      const uIdStr = u._id.toString();
+      const stats = statsMap[uIdStr] || { totalLeads: 0, convertedLeads: 0, pendingLeads: 0 };
+      const remarkActivity = remarksMap[uIdStr] || { totalRemarks: 0, latestRemarkDate: null };
+
+      return {
+        ...u,
+        statistics: {
+          ...stats,
+          totalRemarks: remarkActivity.totalRemarks,
+          latestRemarkDate: remarkActivity.latestRemarkDate
+        }
+      };
+    });
+
+    res.status(200).json({
+      status: 'success',
+      results: summary.length,
+      data: {
+        users: summary
+      }
     });
   } catch (error) {
     next(error);

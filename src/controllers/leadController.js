@@ -58,6 +58,8 @@ export const createLead = async (req, res, next) => {
     // Determine initial status: if has assignee, default to 'assigned' instead of 'new'
     const finalStatus = status || (finalAssignedTo ? 'assigned' : 'new');
 
+    const creatorModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
+
     // Build lead details
     const leadData = {
       name,
@@ -67,11 +69,25 @@ export const createLead = async (req, res, next) => {
       status: finalStatus,
       priority,
       tags,
-      assignedTo: finalAssignedTo || undefined,
       createdBy: req.user._id,
+      createdByModel: creatorModel,
       followUpDate,
       remarks: [],
     };
+
+    if (finalAssignedTo) {
+      leadData.assignedTo = finalAssignedTo;
+      // Determine if assignee is Admin or User
+      let targetUser = await User.findById(finalAssignedTo);
+      let assigneeModel = 'User';
+      if (!targetUser) {
+        targetUser = await Admin.findById(finalAssignedTo);
+        if (targetUser) assigneeModel = 'Admin';
+      }
+      leadData.assignedToModel = assigneeModel;
+      leadData.assignedBy = req.user._id;
+      leadData.assignedByModel = creatorModel;
+    }
 
     // If an initial remark is provided, add it
     if (remark) {
@@ -167,6 +183,7 @@ export const getLeads = async (req, res, next) => {
     const leads = await Lead.find(query)
       .populate('assignedTo', 'name email role')
       .populate('createdBy', 'name email')
+      .populate('assignedBy', 'name email role')
       .sort({ updatedAt: -1 })
       .skip(skipNum)
       .limit(limitNum)
@@ -197,6 +214,7 @@ export const getLeadById = async (req, res, next) => {
     const lead = await Lead.findById(req.params.id)
       .populate('assignedTo', 'name email role phone')
       .populate('createdBy', 'name email')
+      .populate('assignedBy', 'name email role phone')
       .populate('remarks.addedBy', 'name email role');
 
     if (!lead) {
@@ -289,9 +307,11 @@ export const assignLead = async (req, res, next) => {
 
     // Verify target user exists (check both User and Admin collections)
     let targetUser = await User.findById(userId);
+    let assigneeModel = 'User';
     if (!targetUser) {
       const { Admin } = await import('../models/Admin.js');
       targetUser = await Admin.findById(userId);
+      if (targetUser) assigneeModel = 'Admin';
     }
     if (!targetUser) {
       res.status(404);
@@ -321,6 +341,9 @@ export const assignLead = async (req, res, next) => {
 
     // Update assignment
     lead.assignedTo = userId;
+    lead.assignedToModel = assigneeModel;
+    lead.assignedBy = req.user._id;
+    lead.assignedByModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
     lead.status = 'assigned';
 
     // If assigning to installation role, set installation fields too
