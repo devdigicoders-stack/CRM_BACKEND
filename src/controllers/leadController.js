@@ -1,6 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import XLSX from 'xlsx';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
 import { Admin } from '../models/Admin.js';
@@ -676,6 +677,84 @@ export const updateDeliveryStatus = async (req, res, next) => {
         lead: formatLeadWithIntegrations(updatedLead),
       },
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Configure multer storage for bulk Excel upload
+const bulkUploadStorage = multer.memoryStorage();
+export const uploadBulkMiddleware = multer({
+  storage: bulkUploadStorage,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+}).single('file');
+
+// @desc    Upload leads in bulk via Excel
+// @route   POST /api/v1/leads/bulk-upload
+// @access  Private
+export const bulkUploadLeads = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      res.status(400);
+      throw new Error('Please upload an Excel file');
+    }
+
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    
+    // Convert to JSON
+    const data = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+    if (!data || data.length === 0) {
+      res.status(400);
+      throw new Error('The uploaded Excel file is empty');
+    }
+
+    const creatorModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
+
+    const leadsToInsert = data.map((row) => {
+      // Clean keys in case of trailing spaces in Excel headers
+      const cleanRow = {};
+      Object.keys(row).forEach(key => {
+        cleanRow[key.trim().toLowerCase()] = row[key];
+      });
+
+      return {
+        name: cleanRow['name'] || 'Unknown',
+        phone: cleanRow['phone'] ? String(cleanRow['phone']).trim() : '0000000000',
+        email: cleanRow['email'] || '',
+        source: cleanRow['source'] || 'Bulk Upload',
+        status: cleanRow['status'] ? cleanRow['status'].toLowerCase() : 'new',
+        priority: cleanRow['priority'] ? cleanRow['priority'].toLowerCase() : 'medium',
+        tags: cleanRow['tags'] ? String(cleanRow['tags']).split(',').map(t => t.trim()) : [],
+        createdBy: req.user._id,
+        createdByModel: creatorModel,
+        remarks: cleanRow['remark'] ? [{ note: cleanRow['remark'], addedBy: req.user._id }] : []
+      };
+    });
+
+    const result = await Lead.insertMany(leadsToInsert);
+
+    // Notify admins about bulk upload
+    const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+    for (const admin of admins) {
+      await sendNotification(
+        admin._id, 
+        '📊 Bulk Leads Uploaded', 
+        `${result.length} new leads were bulk uploaded by ${req.user.name}`, 
+        null
+      );
+    }
+
+    res.status(201).json({
+      status: 'success',
+      message: `${result.length} leads successfully uploaded`,
+      data: {
+        count: result.length
+      }
+    });
+
   } catch (error) {
     next(error);
   }

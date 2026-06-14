@@ -31,6 +31,7 @@ apiRouter.get('/users/sales-list', protect, userController.getSalesUsers);
 apiRouter.post('/users/fcm-token', protect, userController.registerFcmToken);
 
 // --- Lead Routes ---
+apiRouter.post('/leads/bulk-upload', protect, checkPermission('leads'), leadController.uploadBulkMiddleware, leadController.bulkUploadLeads);
 apiRouter.post('/leads', protect, checkPermission('leads'), leadController.createLead);
 apiRouter.get('/leads', protect, checkPermission('leads'), leadController.getLeads);
 apiRouter.get('/leads/:id', protect, checkPermission('leads'), leadController.getLeadById);
