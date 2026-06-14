@@ -49,8 +49,8 @@ apiRouter.get('/dashboard/reminders/missed', protect, checkPermission('dashboard
 apiRouter.get('/dashboard/performance', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('dashboard'), dashboardController.getPerformanceAnalytics);
 
 // --- Settings Routes ---
-apiRouter.get('/settings', protect, checkPermission('settings'), settingsController.getSettings);
-apiRouter.put('/settings', protect, restrictTo('superAdmin', 'admin'), checkPermission('settings'), settingsController.updateSettings);
+apiRouter.get('/settings', protect, settingsController.getSettings);
+apiRouter.put('/settings', protect, restrictTo('superAdmin', 'admin', 'sales'), settingsController.updateSettings);
 
 // --- User Management Routes ---
 apiRouter.post('/users', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.createUser);
@@ -73,7 +73,7 @@ apiRouter.get('/notifications', protect, notificationController.getNotifications
 apiRouter.put('/notifications/:id/read', protect, notificationController.markAsRead);
 
 // --- Report Routes ---
-apiRouter.get('/reports/analytics', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('reports'), reportController.getComprehensiveReport);
+apiRouter.get('/reports/analytics', protect, restrictTo('superAdmin', 'admin', 'manager', 'sales'), checkPermission('reports'), reportController.getComprehensiveReport);
 apiRouter.get('/reports/export/excel', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('reports'), reportController.exportLeadsExcel);
 apiRouter.get('/reports/export/pdf', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('reports'), reportController.exportLeadsPdf);
 

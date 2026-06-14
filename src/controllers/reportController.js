@@ -7,7 +7,7 @@ const getFilterQuery = (req) => {
   const { search, status, priority, tag, assignedTo, followUpDate } = req.query;
   const query = {};
 
-  if (req.user.role === 'sales_rep') {
+  if (req.user.role === 'sales') {
     query.assignedTo = req.user.id;
   } else if (assignedTo) {
     query.assignedTo = assignedTo;
