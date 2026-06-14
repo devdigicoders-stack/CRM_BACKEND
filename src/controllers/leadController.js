@@ -759,3 +759,31 @@ export const bulkUploadLeads = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Delete a lead
+// @route   DELETE /api/v1/leads/:id
+// @access  Private (Super Admin only)
+export const deleteLead = async (req, res, next) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) {
+      res.status(404);
+      throw new Error('Lead not found');
+    }
+
+    // Only allow superAdmin to delete leads
+    if (req.user.role !== 'superAdmin') {
+      res.status(403);
+      throw new Error('Only Super Admin can delete leads');
+    }
+
+    await lead.deleteOne();
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Lead deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};

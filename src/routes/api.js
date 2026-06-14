@@ -36,6 +36,7 @@ apiRouter.post('/leads', protect, checkPermission('leads'), leadController.creat
 apiRouter.get('/leads', protect, checkPermission('leads'), leadController.getLeads);
 apiRouter.get('/leads/:id', protect, checkPermission('leads'), leadController.getLeadById);
 apiRouter.put('/leads/:id', protect, checkPermission('leads'), leadController.updateLead);
+apiRouter.delete('/leads/:id', protect, restrictTo('superAdmin'), leadController.deleteLead);
 apiRouter.put('/leads/:id/assign', protect, restrictTo('superAdmin', 'admin', 'calling', 'crmuser'), checkPermission('leads'), leadController.assignLead);
 apiRouter.post('/leads/:id/remarks', protect, checkPermission('leads'), leadController.addRemark);
 apiRouter.put('/leads/:id/sale-details', protect, checkPermission('leads'), leadController.updateSaleDetails);
