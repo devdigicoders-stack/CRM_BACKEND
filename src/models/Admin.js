@@ -19,7 +19,6 @@ const adminSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Please provide a password'],
       minlength: 6,
-      select: false,
     },
     role: {
       type: String,
@@ -44,7 +43,6 @@ const adminSchema = new mongoose.Schema(
     },
     permissions: {
       type: [String],
-      enum: ['leads', 'accounts', 'installation', 'reports', 'settings', 'users', 'dashboard'],
       default: [],
     },
     fcmTokens: {
@@ -57,17 +55,9 @@ const adminSchema = new mongoose.Schema(
   }
 );
 
-// Hash password before saving
-adminSchema.pre('save', async function () {
-  if (!this.isModified('password')) return;
-  
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-});
-
 // Compare password method
 adminSchema.methods.comparePassword = async function (candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+  return candidatePassword === this.password;
 };
 
 export const Admin = mongoose.model('Admin', adminSchema);

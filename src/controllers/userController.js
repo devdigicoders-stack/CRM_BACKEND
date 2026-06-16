@@ -3,8 +3,6 @@ import { Admin } from '../models/Admin.js';
 import { User } from '../models/User.js';
 import { Lead } from '../models/Lead.js';
 
-const VALID_PERMISSIONS = ['leads', 'accounts', 'installation', 'reports', 'settings', 'users', 'dashboard'];
-
 // @desc    Create a new user (decides collection by role)
 // @route   POST /api/v1/users
 // @access  Private (Super Admin and Admin only)
@@ -45,15 +43,11 @@ export const createUser = async (req, res, next) => {
     // Create inside correct collection
     let newUser;
     if (isAdminRole) {
-      const sanitizedPermissions = Array.isArray(permissions)
-        ? permissions.filter((p) => VALID_PERMISSIONS.includes(p))
-        : [];
-      newUser = await Admin.create({ name, email, password, role: targetRole, phone, permissions: targetRole === 'superAdmin' ? VALID_PERMISSIONS : sanitizedPermissions });
+      const sanitizedPermissions = Array.isArray(permissions) ? permissions : [];
+      newUser = await Admin.create({ name, email, password, role: targetRole, phone, permissions: sanitizedPermissions });
     } else {
       newUser = await User.create({ name, email, password, role: targetRole, phone });
     }
-
-    newUser.password = undefined;
 
     res.status(201).json({
       status: 'success',
@@ -116,8 +110,6 @@ export const getUserById = async (req, res, next) => {
       res.status(404);
       throw new Error('User not found');
     }
-
-    user.password = undefined;
 
     res.status(200).json({
       status: 'success',
@@ -201,7 +193,7 @@ export const getUsers = async (req, res, next) => {
 // @access  Private (Super Admin and Admin only)
 export const updateUser = async (req, res, next) => {
   try {
-    const { name, email, role, phone, permissions } = req.body;
+    const { name, email, role, phone, permissions, password } = req.body;
 
     // Search in Admins first
     let userToUpdate = await Admin.findById(req.params.id);
@@ -242,10 +234,9 @@ export const updateUser = async (req, res, next) => {
 
     if (name) userToUpdate.name = name;
     if (phone) userToUpdate.phone = phone;
+    if (password) userToUpdate.password = password;
     if (permissions !== undefined && isAdminCollection && userToUpdate.role !== 'superAdmin') {
-      userToUpdate.permissions = Array.isArray(permissions)
-        ? permissions.filter((p) => VALID_PERMISSIONS.includes(p))
-        : [];
+      userToUpdate.permissions = Array.isArray(permissions) ? permissions : [];
     }
 
     // If changing role, check if collection move is needed
@@ -278,7 +269,6 @@ export const updateUser = async (req, res, next) => {
           active: userToUpdate.active,
         });
 
-        movedUser.password = undefined;
         return res.status(200).json({
           status: 'success',
           data: {
@@ -289,8 +279,6 @@ export const updateUser = async (req, res, next) => {
     }
 
     const updatedUser = await userToUpdate.save();
-    updatedUser.password = undefined;
-
     res.status(200).json({
       status: 'success',
       data: {
@@ -326,20 +314,16 @@ export const updateUserPermissions = async (req, res, next) => {
       throw new Error('Cannot modify Super Admin permissions');
     }
 
-    const sanitized = permissions.filter((p) => VALID_PERMISSIONS.includes(p));
-    const invalid = permissions.filter((p) => !VALID_PERMISSIONS.includes(p));
-
-    admin.permissions = sanitized;
+    admin.permissions = Array.isArray(permissions) ? permissions : [];
     await admin.save();
 
     res.status(200).json({
       status: 'success',
-      message: `Permissions updated successfully${invalid.length ? `. Ignored invalid: ${invalid.join(', ')}` : ''}`,
+      message: 'Permissions updated successfully',
       data: {
         adminId: admin._id,
         name: admin.name,
-        permissions: admin.permissions,
-        availablePermissions: VALID_PERMISSIONS,
+        permissions: admin.permissions
       },
     });
   } catch (error) {

@@ -210,6 +210,15 @@ const generateAnalyticsPipeline = (matchQuery) => {
               },
               totalDealValue: {
                 $sum: { $cond: [{ $in: ['$status', ['converted', 'closed']] }, '$dealValue', 0] }
+              },
+              totalInstallations: {
+                $sum: { $cond: [{ $eq: ['$transferredToInstallation', true] }, 1, 0] }
+              },
+              pendingInstallations: {
+                $sum: { $cond: [{ $and: [{ $eq: ['$transferredToInstallation', true] }, { $in: ['$installationStatus', ['assigned', 'in_progress']] }] }, 1, 0] }
+              },
+              completedInstallations: {
+                $sum: { $cond: [{ $and: [{ $eq: ['$transferredToInstallation', true] }, { $eq: ['$installationStatus', 'completed'] }] }, 1, 0] }
               }
             }
           }
@@ -231,7 +240,10 @@ const generateAnalyticsPipeline = (matchQuery) => {
 const formatAnalyticsResult = (result) => {
   if (!result || !result.length) return null;
   const data = result[0];
-  const totals = data.totals[0] || { totalLeads: 0, convertedLeads: 0, pendingLeads: 0, totalDealValue: 0 };
+  const totals = data.totals[0] || { 
+    totalLeads: 0, convertedLeads: 0, pendingLeads: 0, totalDealValue: 0,
+    totalInstallations: 0, pendingInstallations: 0, completedInstallations: 0
+  };
   
   const statusBreakdown = {};
   data.statusBreakdown.forEach(item => { statusBreakdown[item._id] = item.count; });
@@ -247,6 +259,9 @@ const formatAnalyticsResult = (result) => {
     convertedLeads: totals.convertedLeads || 0,
     pendingLeads: totals.pendingLeads || 0,
     totalDealValue: totals.totalDealValue || 0,
+    totalInstallations: totals.totalInstallations || 0,
+    pendingInstallations: totals.pendingInstallations || 0,
+    completedInstallations: totals.completedInstallations || 0,
     statusBreakdown,
     sourceBreakdown,
     priorityBreakdown
@@ -309,3 +324,5 @@ export const getComprehensiveReport = async (req, res, next) => {
   }
 };
 
+
+// Trigger nodemon restart
