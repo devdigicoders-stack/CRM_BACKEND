@@ -279,7 +279,23 @@ export const updateLead = async (req, res, next) => {
     if (email) lead.email = email;
     if (priority) lead.priority = priority;
     if (tags) lead.tags = tags;
-    if (status) lead.status = status;
+    if (status) {
+      if (status === 'converted' && lead.status !== 'converted') {
+        lead.transferredToAccounts = true;
+        lead.saleConfirmedAt = new Date();
+        lead.remarks.push({
+          note: `[System] Lead automatically marked as Sale Confirmed (Closed Won) and transferred to Accounts Team.`,
+          addedBy: req.user._id
+        });
+        
+        // Notify all admins about new sale
+        const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+        for (const admin of admins) {
+          sendNotification(admin._id, '💰 New Sale Confirmed (Auto)', `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko auto-transfer ho gayi by ${req.user.name}`, lead._id).catch(err => console.error(err));
+        }
+      }
+      lead.status = status;
+    }
 
     const updatedLead = await lead.save();
 
@@ -420,6 +436,20 @@ export const addRemark = async (req, res, next) => {
       lead.priority = priority;
     }
     if (status) {
+      if (status === 'converted' && lead.status !== 'converted') {
+        lead.transferredToAccounts = true;
+        lead.saleConfirmedAt = new Date();
+        lead.remarks.push({
+          note: `[System] Lead automatically marked as Sale Confirmed (Closed Won) and transferred to Accounts Team.`,
+          addedBy: req.user._id
+        });
+        
+        // Notify all admins about new sale
+        const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+        for (const admin of admins) {
+          sendNotification(admin._id, '💰 New Sale Confirmed (Auto)', `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko auto-transfer ho gayi by ${req.user.name}`, lead._id).catch(err => console.error(err));
+        }
+      }
       lead.status = status;
     }
 
