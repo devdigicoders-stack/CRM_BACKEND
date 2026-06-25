@@ -6,7 +6,7 @@ export const seedSuperAdmin = async () => {
     if (!superAdminExists) {
       console.log('🌱 No Super Admin found. Seeding default Super Admin...');
       await Admin.create({
-        name: 'Super Admin',
+        name: 'Vikash Gupta',
         email: 'superadmin@crm.com',
         password: 'admin12345',
         role: 'superAdmin',

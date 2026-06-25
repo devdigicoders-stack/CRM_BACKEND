@@ -651,6 +651,74 @@ export const transferToAccounts = async (req, res, next) => {
   }
 };
 
+// @desc    Confirm sale details and transfer to accounts (Closed Won)
+// @route   POST /api/v1/leads/:id/confirm-sale
+// @access  Private
+export const confirmSale = async (req, res, next) => {
+  try {
+    const { productDetails, dealValue, accountRemarks, transferToAccounts } = req.body;
+
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) {
+      res.status(404);
+      throw new Error('Lead not found');
+    }
+
+    const canConfirm =
+      ['superAdmin', 'admin'].includes(req.user.role) ||
+      (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
+      lead.assignedTo?.toString() === req.user._id.toString();
+    if (!canConfirm) {
+      res.status(403);
+      throw new Error('You do not have permission to confirm sale for this lead');
+    }
+
+    if (productDetails) lead.productDetails = productDetails;
+    if (dealValue !== undefined) lead.dealValue = dealValue;
+    if (accountRemarks) lead.accountRemarks = accountRemarks;
+
+    // Set status to converted (Closed Won)
+    lead.status = 'converted';
+
+    let remarkNote = `[Sales Rep] Mark Lead as Sale Confirmed (Closed Won).`;
+
+    if (transferToAccounts === true) {
+      lead.transferredToAccounts = true;
+      lead.saleConfirmedAt = new Date();
+      remarkNote += ` Transferred to Accounts Team. Remarks: ${accountRemarks || 'None'}`;
+      
+      // Notify all admins about new sale
+      const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+      for (const admin of admins) {
+        await sendNotification(
+          admin._id,
+          '💰 New Sale Confirmed',
+          `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko transfer ho gayi by ${req.user.name}`,
+          lead._id
+        ).catch(err => console.error(err));
+      }
+    } else {
+      remarkNote += ` Remarks: ${accountRemarks || 'None'}`;
+    }
+
+    lead.remarks.push({
+      note: remarkNote,
+      addedBy: req.user._id,
+    });
+
+    const updatedLead = await lead.save();
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        lead: formatLeadWithIntegrations(updatedLead),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Update Delivery Status (Pending / In Progress / Delivered) & Timeline
 // @route   PUT /api/v1/leads/:id/delivery
 // @access  Private
