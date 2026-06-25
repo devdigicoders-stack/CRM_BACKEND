@@ -177,7 +177,7 @@ export const checkPhoneExists = async (req, res, next) => {
 // @access  Private
 export const getLeads = async (req, res, next) => {
   try {
-    const { search, status, priority, tag, assignedTo, followUpDate, page = 1, limit = 20 } = req.query;
+    const { search, status, priority, tag, assignedTo, followUpDate, page = 1, limit } = req.query;
 
     const query = {};
 
@@ -229,22 +229,29 @@ export const getLeads = async (req, res, next) => {
       };
     }
 
-    const pageNum = parseInt(page, 10);
-    const limitNum = parseInt(limit, 10);
-    const skipNum = (pageNum - 1) * limitNum;
+    const pageNum = parseInt(page, 10) || 1;
 
     // Get total count
     const total = await Lead.countDocuments(query);
+    let limitNum = total;
 
     // Execute query sorted by latest updated lead
-    const leads = await Lead.find(query)
+    let queryBuilder = Lead.find(query)
       .populate('assignedTo', 'name email role')
       .populate('createdBy', 'name email')
       .populate('assignedBy', 'name email role')
-      .sort({ updatedAt: -1 })
-      .skip(skipNum)
-      .limit(limitNum)
-      .lean();
+      .sort({ updatedAt: -1 });
+
+    if (limit !== undefined) {
+      const parsedLimit = parseInt(limit, 10);
+      if (!isNaN(parsedLimit)) {
+        limitNum = parsedLimit;
+        const skipNum = (pageNum - 1) * limitNum;
+        queryBuilder = queryBuilder.skip(skipNum).limit(limitNum);
+      }
+    }
+
+    const leads = await queryBuilder.lean();
 
     const formattedLeads = leads.map(formatLeadWithIntegrations);
 
@@ -252,7 +259,7 @@ export const getLeads = async (req, res, next) => {
       status: 'success',
       results: formattedLeads.length,
       total,
-      pages: Math.ceil(total / limitNum),
+      pages: Math.ceil(total / limitNum) || 1,
       currentPage: pageNum,
       data: {
         leads: formattedLeads,
