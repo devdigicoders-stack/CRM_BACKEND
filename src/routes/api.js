@@ -34,6 +34,7 @@ apiRouter.post('/users/fcm-token', protect, userController.registerFcmToken);
 apiRouter.post('/leads/bulk-upload', protect, checkPermission('leads'), leadController.uploadBulkMiddleware, leadController.bulkUploadLeads);
 apiRouter.post('/leads', protect, checkPermission('leads'), leadController.createLead);
 apiRouter.get('/leads', protect, checkPermission('leads'), leadController.getLeads);
+apiRouter.get('/leads/check-phone', protect, checkPermission('leads'), leadController.checkPhoneExists);
 apiRouter.get('/leads/:id', protect, checkPermission('leads'), leadController.getLeadById);
 apiRouter.put('/leads/:id', protect, checkPermission('leads'), leadController.updateLead);
 apiRouter.delete('/leads/:id', protect, restrictTo('superAdmin'), leadController.deleteLead);

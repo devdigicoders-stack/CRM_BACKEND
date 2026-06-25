@@ -116,6 +116,62 @@ export const createLead = async (req, res, next) => {
   }
 };
 
+// @desc    Check if a phone number already exists in leads
+// @route   GET /api/v1/leads/check-phone
+// @access  Private
+export const checkPhoneExists = async (req, res, next) => {
+  try {
+    const { phone } = req.query;
+
+    if (!phone) {
+      res.status(400);
+      throw new Error('Please provide a phone number');
+    }
+
+    const cleanPhone = phone.replace(/\D/g, '');
+    let query = { phone: phone.trim() };
+
+    if (cleanPhone.length >= 10) {
+      const last10 = cleanPhone.slice(-10);
+      query = {
+        $or: [
+          { phone: phone.trim() },
+          { phone: { $regex: last10 + '$' } }
+        ]
+      };
+    }
+
+    const lead = await Lead.findOne(query)
+      .populate('assignedTo', 'name email role')
+      .lean();
+
+    if (!lead) {
+      return res.status(200).json({
+        status: 'success',
+        exists: false,
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      exists: true,
+      lead: {
+        _id: lead._id,
+        name: lead.name,
+        phone: lead.phone,
+        status: lead.status,
+        assignedTo: lead.assignedTo ? {
+          _id: lead.assignedTo._id,
+          name: lead.assignedTo.name,
+          role: lead.assignedTo.role,
+        } : null,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    View leads (Search, Filter, List)
 // @route   GET /api/v1/leads
 // @access  Private
