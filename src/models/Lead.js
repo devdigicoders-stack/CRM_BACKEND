@@ -133,6 +133,18 @@ const leadSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    amountPaid: {
+      type: Number,
+      default: 0,
+    },
+    pendingAmount: {
+      type: Number,
+      default: 0,
+    },
+    paymentScreenshot: {
+      type: String,
+      trim: true,
+    },
     saleDocumentsUrl: {
       type: String,
       trim: true,

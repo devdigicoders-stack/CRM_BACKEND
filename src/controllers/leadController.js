@@ -560,6 +560,37 @@ export const uploadAgreementMiddleware = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB
 }).single('agreement');
 
+// Configure multer storage for payment screenshots
+const paymentScreenshotStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = 'public/uploads/payments';
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, `${file.fieldname}-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const paymentScreenshotFileFilter = (req, file, cb) => {
+  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.pdf'];
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (allowedExtensions.includes(ext)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only images and PDFs are allowed for payment screenshots'), false);
+  }
+};
+
+export const uploadPaymentScreenshotMiddleware = multer({
+  storage: paymentScreenshotStorage,
+  fileFilter: paymentScreenshotFileFilter,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+}).single('paymentScreenshot');
+
 // @desc    Update Product / Service Details and Deal Value / Sale Amount
 // @route   PUT /api/v1/leads/:id/sale-details
 // @access  Private
@@ -714,12 +745,13 @@ export const transferToAccounts = async (req, res, next) => {
   }
 };
 
-// @desc    Confirm sale details and transfer to accounts (Closed Won)
-// @route   POST /api/v1/leads/:id/confirm-sale
-// @access  Private
 export const confirmSale = async (req, res, next) => {
   try {
-    const { productDetails, dealValue, accountRemarks, transferToAccounts } = req.body;
+    const { productDetails, accountRemarks } = req.body;
+    const transferToAccounts = req.body.transferToAccounts === 'true' || req.body.transferToAccounts === true;
+    const dealValue = req.body.dealValue !== undefined ? Number(req.body.dealValue) : undefined;
+    const amountPaid = req.body.amountPaid !== undefined ? Number(req.body.amountPaid) : undefined;
+    const pendingAmount = req.body.pendingAmount !== undefined ? Number(req.body.pendingAmount) : undefined;
 
     const lead = await Lead.findById(req.params.id);
     if (!lead) {
@@ -736,9 +768,37 @@ export const confirmSale = async (req, res, next) => {
       throw new Error('You do not have permission to confirm sale for this lead');
     }
 
-    if (productDetails) lead.productDetails = productDetails;
-    if (dealValue !== undefined) lead.dealValue = dealValue;
+    // Validation
+    if (!productDetails || !productDetails.trim()) {
+      res.status(400);
+      throw new Error('Product details are required');
+    }
+    if (dealValue === undefined || isNaN(dealValue)) {
+      res.status(400);
+      throw new Error('Deal value is required and must be a number');
+    }
+    if (amountPaid === undefined || isNaN(amountPaid)) {
+      res.status(400);
+      throw new Error('Amount paid is required and must be a number');
+    }
+    if (pendingAmount === undefined || isNaN(pendingAmount)) {
+      res.status(400);
+      throw new Error('Pending amount is required and must be a number');
+    }
+    if (!req.file && !lead.paymentScreenshot) {
+      res.status(400);
+      throw new Error('Payment screenshot is required');
+    }
+
+    lead.productDetails = productDetails;
+    lead.dealValue = dealValue;
+    lead.amountPaid = amountPaid;
+    lead.pendingAmount = pendingAmount;
     if (accountRemarks) lead.accountRemarks = accountRemarks;
+
+    if (req.file) {
+      lead.paymentScreenshot = `/uploads/payments/${req.file.filename}`;
+    }
 
     // Set status to converted (Closed Won)
     lead.status = 'converted';

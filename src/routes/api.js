@@ -43,7 +43,7 @@ apiRouter.post('/leads/:id/remarks', protect, checkPermission('leads'), leadCont
 apiRouter.put('/leads/:id/sale-details', protect, checkPermission('leads'), leadController.updateSaleDetails);
 apiRouter.put('/leads/:id/sale-documents', protect, checkPermission('leads'), leadController.uploadAgreementMiddleware, leadController.uploadSaleDocuments);
 apiRouter.put('/leads/:id/transfer-to-accounts', protect, checkPermission('leads'), leadController.transferToAccounts);
-apiRouter.post('/leads/:id/confirm-sale', protect, checkPermission('leads'), leadController.confirmSale);
+apiRouter.post('/leads/:id/confirm-sale', protect, checkPermission('leads'), leadController.uploadPaymentScreenshotMiddleware, leadController.confirmSale);
 apiRouter.put('/leads/:id/delivery', protect, checkPermission('leads'), leadController.updateDeliveryStatus);
 
 // --- Dashboard Routes ---
