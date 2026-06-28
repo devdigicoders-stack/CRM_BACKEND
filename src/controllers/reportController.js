@@ -4,7 +4,7 @@ import { Lead } from '../models/Lead.js';
 
 // Helper to compile filters based on query params
 const getFilterQuery = (req) => {
-  const { search, status, priority, tag, assignedTo, followUpDate } = req.query;
+  const { search, status, priority, tag, assignedTo, followUpDate, startDate, endDate } = req.query;
   const query = {};
 
   if (req.user.role === 'sales') {
@@ -31,6 +31,20 @@ const getFilterQuery = (req) => {
     const endOfDay = new Date(followUpDate);
     endOfDay.setHours(23, 59, 59, 999);
     query.followUpDate = { $gte: startOfDay, $lte: endOfDay };
+  }
+
+  if (startDate || endDate) {
+    query.createdAt = {};
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      query.createdAt.$gte = start;
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query.createdAt.$lte = end;
+    }
   }
 
   return query;

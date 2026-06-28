@@ -240,6 +240,10 @@ export const updateInstallationStatus = async (req, res, next) => {
     }
 
     const normalizedStatus = status.toLowerCase();
+    if (normalizedStatus === 'completed' && (!lead.installationProofUrl || lead.installationProofUrl.trim() === '')) {
+      res.status(400);
+      throw new Error('Please upload an installation proof document/image before completing the installation');
+    }
     lead.installationStatus = normalizedStatus;
     if (progressRemarks) lead.installationProgressRemarks = progressRemarks;
 
