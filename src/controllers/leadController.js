@@ -934,6 +934,24 @@ export const bulkUploadLeads = async (req, res, next) => {
 
     const creatorModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
 
+    const allUsers = await User.find({}).select('_id email').lean();
+    const allAdmins = await Admin.find({}).select('_id email').lean();
+    const emailToIdMap = {};
+    const idToModelMap = {};
+    
+    allUsers.forEach(u => {
+      if (u.email) {
+        emailToIdMap[u.email.toLowerCase()] = u._id;
+        idToModelMap[u._id.toString()] = 'User';
+      }
+    });
+    allAdmins.forEach(a => {
+      if (a.email) {
+        emailToIdMap[a.email.toLowerCase()] = a._id;
+        idToModelMap[a._id.toString()] = 'Admin';
+      }
+    });
+
     const leadsToInsert = data.map((row) => {
       // Clean keys in case of trailing spaces in Excel headers
       const cleanRow = {};
@@ -941,18 +959,48 @@ export const bulkUploadLeads = async (req, res, next) => {
         cleanRow[key.trim().toLowerCase()] = row[key];
       });
 
-      return {
+      let finalStatus = cleanRow['status'] ? cleanRow['status'].toLowerCase() : 'new';
+      let finalAssignedTo = undefined;
+      let finalAssignedToModel = undefined;
+
+      const assignedToVal = cleanRow['assignedto'];
+      if (assignedToVal) {
+        const valStr = String(assignedToVal).trim().toLowerCase();
+        if (emailToIdMap[valStr]) {
+          finalAssignedTo = emailToIdMap[valStr];
+          finalAssignedToModel = idToModelMap[finalAssignedTo.toString()];
+          if (finalStatus === 'new') finalStatus = 'assigned';
+        } else {
+          // If a direct MongoDB ObjectId is somehow provided
+          if (valStr.length === 24) {
+             finalAssignedTo = valStr;
+             finalAssignedToModel = 'User'; // fallback
+             if (finalStatus === 'new') finalStatus = 'assigned';
+          }
+        }
+      }
+
+      const leadDoc = {
         name: cleanRow['name'] || 'Unknown',
         phone: cleanRow['phone'] ? String(cleanRow['phone']).trim() : '0000000000',
         email: cleanRow['email'] || '',
         source: cleanRow['source'] || 'Bulk Upload',
-        status: cleanRow['status'] ? cleanRow['status'].toLowerCase() : 'new',
+        status: finalStatus,
         priority: cleanRow['priority'] ? cleanRow['priority'].toLowerCase() : 'medium',
         tags: cleanRow['tags'] ? String(cleanRow['tags']).split(',').map(t => t.trim()) : [],
         createdBy: req.user._id,
         createdByModel: creatorModel,
         remarks: cleanRow['remark'] ? [{ note: cleanRow['remark'], addedBy: req.user._id }] : []
       };
+
+      if (finalAssignedTo) {
+        leadDoc.assignedTo = finalAssignedTo;
+        leadDoc.assignedToModel = finalAssignedToModel;
+        leadDoc.assignedBy = req.user._id;
+        leadDoc.assignedByModel = creatorModel;
+      }
+
+      return leadDoc;
     });
 
     const result = await Lead.insertMany(leadsToInsert);
