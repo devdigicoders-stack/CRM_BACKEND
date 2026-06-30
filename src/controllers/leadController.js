@@ -952,107 +952,126 @@ export const bulkUploadLeads = async (req, res, next) => {
       }
     });
 
-    // ── Step 1: Parse all rows and extract phones ─────────────────────
+    // ── Step 1: Parse all rows ────────────────────────────────────────
     const parsedRows = data.map((row) => {
       const cleanRow = {};
       Object.keys(row).forEach(key => {
         cleanRow[key.trim().toLowerCase()] = row[key];
       });
-      const rawPhone = cleanRow['phone'] ? String(cleanRow['phone']).trim() : '';
-      const cleanPhone = rawPhone.replace(/\D/g, '');
-      const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
-      return { cleanRow, rawPhone, last10 };
+      const rawPhone  = cleanRow['phone'] ? String(cleanRow['phone']).trim() : '';
+      const digitsOnly = rawPhone.replace(/\D/g, '');
+      // Always store last 10 digits (strips country code like +91)
+      const normalized = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
+      return { cleanRow, rawPhone, normalized };
     });
 
-    // ── Step 2: Bulk duplicate check against DB in one query ──────────
-    const last10Phones = [...new Set(parsedRows.map(r => r.last10).filter(Boolean))];
-    const existingLeads = await Lead.find({
-      $or: last10Phones.map(p => ({ phone: { $regex: p + '$' } }))
-    }).select('name phone status assignedTo').populate('assignedTo', 'name').lean();
+    // ── Step 2: Separate invalid phone rows (not exactly 10 digits) ───
+    const invalidRows = [];
+    const validRows   = [];
 
-    // Build a Set of last-10-digit phones that already exist
+    for (const row of parsedRows) {
+      if (row.normalized.length !== 10) {
+        invalidRows.push({
+          rowName: row.cleanRow['name'] || 'Unknown',
+          phone:   row.rawPhone || '(empty)',
+          reason:  row.rawPhone
+            ? `${row.normalized.length} digit(s) found — must be exactly 10`
+            : 'Phone number is missing',
+        });
+      } else {
+        validRows.push({ ...row, last10: row.normalized });
+      }
+    }
+
+    // ── Step 3: Bulk duplicate check against DB in one query ──────────
+    const last10Phones = [...new Set(validRows.map(r => r.last10))];
+    const existingLeads = last10Phones.length > 0
+      ? await Lead.find({
+          $or: last10Phones.map(p => ({ phone: { $regex: p + '$' } }))
+        }).select('name phone status assignedTo').populate('assignedTo', 'name').lean()
+      : [];
+
     const existingPhoneSet = new Set(
       existingLeads.map(l => l.phone.replace(/\D/g, '').slice(-10))
     );
 
-    // ── Step 3: Separate new vs duplicate rows ────────────────────────
-    const leadsToInsert = [];
+    // ── Step 4: Separate new vs duplicate rows ────────────────────────
+    const leadsToInsert   = [];
     const duplicateDetails = [];
 
-    for (const { cleanRow, rawPhone, last10 } of parsedRows) {
-      const isDuplicate = last10 && existingPhoneSet.has(last10);
+    for (const { cleanRow, last10 } of validRows) {
+      const isDuplicate = existingPhoneSet.has(last10);
 
       if (isDuplicate) {
-        // Find the existing lead info for this phone
         const existingLead = existingLeads.find(
           l => l.phone.replace(/\D/g, '').slice(-10) === last10
         );
         duplicateDetails.push({
-          rowName: cleanRow['name'] || 'Unknown',
-          phone: rawPhone || last10,
-          existingLeadName: existingLead?.name || 'Unknown',
-          existingStatus: existingLead?.status || 'unknown',
+          rowName:            cleanRow['name'] || 'Unknown',
+          phone:              last10,
+          existingLeadName:   existingLead?.name || 'Unknown',
+          existingStatus:     existingLead?.status || 'unknown',
           existingAssignedTo: existingLead?.assignedTo?.name || null,
         });
         continue;
       }
 
-      let finalStatus = cleanRow['status'] ? cleanRow['status'].toLowerCase() : 'new';
-      let finalAssignedTo = undefined;
+      let finalStatus          = cleanRow['status'] ? cleanRow['status'].toLowerCase() : 'new';
+      let finalAssignedTo      = undefined;
       let finalAssignedToModel = undefined;
 
       const assignedToVal = cleanRow['assignedto'];
       if (assignedToVal) {
         const valStr = String(assignedToVal).trim().toLowerCase();
         if (emailToIdMap[valStr]) {
-          finalAssignedTo = emailToIdMap[valStr];
+          finalAssignedTo      = emailToIdMap[valStr];
           finalAssignedToModel = idToModelMap[finalAssignedTo.toString()];
           if (finalStatus === 'new') finalStatus = 'assigned';
         } else if (valStr.length === 24) {
-          finalAssignedTo = valStr;
+          finalAssignedTo      = valStr;
           finalAssignedToModel = 'User';
           if (finalStatus === 'new') finalStatus = 'assigned';
         }
       }
 
       const leadDoc = {
-        name: cleanRow['name'] || 'Unknown',
-        phone: rawPhone || '0000000000',
-        email: cleanRow['email'] || '',
-        source: cleanRow['source'] || 'Bulk Upload',
-        status: finalStatus,
-        priority: cleanRow['priority'] ? cleanRow['priority'].toLowerCase() : 'medium',
-        tags: cleanRow['tags'] ? String(cleanRow['tags']).split(',').map(t => t.trim()) : [],
-        createdBy: req.user._id,
+        name:           cleanRow['name'] || 'Unknown',
+        phone:          last10,   // always store clean 10-digit number
+        email:          cleanRow['email'] || '',
+        source:         cleanRow['source'] || 'Bulk Upload',
+        status:         finalStatus,
+        priority:       cleanRow['priority'] ? cleanRow['priority'].toLowerCase() : 'medium',
+        tags:           cleanRow['tags'] ? String(cleanRow['tags']).split(',').map(t => t.trim()) : [],
+        createdBy:      req.user._id,
         createdByModel: creatorModel,
-        remarks: cleanRow['remark'] ? [{ note: cleanRow['remark'], addedBy: req.user._id }] : []
+        remarks:        cleanRow['remark'] ? [{ note: cleanRow['remark'], addedBy: req.user._id }] : [],
       };
 
       if (finalAssignedTo) {
-        leadDoc.assignedTo = finalAssignedTo;
+        leadDoc.assignedTo      = finalAssignedTo;
         leadDoc.assignedToModel = finalAssignedToModel;
-        leadDoc.assignedBy = req.user._id;
+        leadDoc.assignedBy      = req.user._id;
         leadDoc.assignedByModel = creatorModel;
       }
 
       leadsToInsert.push(leadDoc);
     }
 
-    // ── Step 4: Insert only non-duplicate leads ───────────────────────
+    // ── Step 5: Insert only valid, non-duplicate leads ────────────────
     let insertedCount = 0;
     if (leadsToInsert.length > 0) {
       const result = await Lead.insertMany(leadsToInsert);
       insertedCount = result.length;
     }
 
-    // ── Step 5: Notify admins ─────────────────────────────────────────
+    // ── Step 6: Notify admins ─────────────────────────────────────────
     if (insertedCount > 0) {
       const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
       for (const admin of admins) {
         await sendNotification(
           admin._id,
           '📊 Bulk Leads Uploaded',
-          `${insertedCount} new leads uploaded by ${req.user.name}. ${duplicateDetails.length} duplicates skipped.`,
+          `${insertedCount} leads inserted by ${req.user.name}. ${duplicateDetails.length} duplicates & ${invalidRows.length} invalid numbers skipped.`,
           null
         );
       }
@@ -1060,11 +1079,13 @@ export const bulkUploadLeads = async (req, res, next) => {
 
     res.status(201).json({
       status: 'success',
-      message: `${insertedCount} leads inserted, ${duplicateDetails.length} duplicates skipped.`,
+      message: `${insertedCount} inserted, ${duplicateDetails.length} duplicates skipped, ${invalidRows.length} invalid numbers skipped.`,
       data: {
-        inserted: insertedCount,
+        inserted:        insertedCount,
         duplicatesCount: duplicateDetails.length,
-        duplicates: duplicateDetails,
+        duplicates:      duplicateDetails,
+        invalidCount:    invalidRows.length,
+        invalid:         invalidRows,
       }
     });
 

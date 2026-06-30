@@ -31,6 +31,14 @@ const leadSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Please provide the lead phone number'],
       trim: true,
+      validate: {
+        validator: function (v) {
+          // Strip all non-digits, must be exactly 10 digits
+          const digits = v.replace(/\D/g, '');
+          return digits.length === 10;
+        },
+        message: props => `Phone number "${props.value}" is invalid — must be exactly 10 digits`,
+      },
     },
     email: {
       type: String,
