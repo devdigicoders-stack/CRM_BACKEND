@@ -923,7 +923,7 @@ export const bulkUploadLeads = async (req, res, next) => {
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    
+
     // Convert to JSON
     const data = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
@@ -938,7 +938,7 @@ export const bulkUploadLeads = async (req, res, next) => {
     const allAdmins = await Admin.find({}).select('_id email').lean();
     const emailToIdMap = {};
     const idToModelMap = {};
-    
+
     allUsers.forEach(u => {
       if (u.email) {
         emailToIdMap[u.email.toLowerCase()] = u._id;
@@ -952,12 +952,50 @@ export const bulkUploadLeads = async (req, res, next) => {
       }
     });
 
-    const leadsToInsert = data.map((row) => {
-      // Clean keys in case of trailing spaces in Excel headers
+    // ── Step 1: Parse all rows and extract phones ─────────────────────
+    const parsedRows = data.map((row) => {
       const cleanRow = {};
       Object.keys(row).forEach(key => {
         cleanRow[key.trim().toLowerCase()] = row[key];
       });
+      const rawPhone = cleanRow['phone'] ? String(cleanRow['phone']).trim() : '';
+      const cleanPhone = rawPhone.replace(/\D/g, '');
+      const last10 = cleanPhone.length >= 10 ? cleanPhone.slice(-10) : cleanPhone;
+      return { cleanRow, rawPhone, last10 };
+    });
+
+    // ── Step 2: Bulk duplicate check against DB in one query ──────────
+    const last10Phones = [...new Set(parsedRows.map(r => r.last10).filter(Boolean))];
+    const existingLeads = await Lead.find({
+      $or: last10Phones.map(p => ({ phone: { $regex: p + '$' } }))
+    }).select('name phone status assignedTo').populate('assignedTo', 'name').lean();
+
+    // Build a Set of last-10-digit phones that already exist
+    const existingPhoneSet = new Set(
+      existingLeads.map(l => l.phone.replace(/\D/g, '').slice(-10))
+    );
+
+    // ── Step 3: Separate new vs duplicate rows ────────────────────────
+    const leadsToInsert = [];
+    const duplicateDetails = [];
+
+    for (const { cleanRow, rawPhone, last10 } of parsedRows) {
+      const isDuplicate = last10 && existingPhoneSet.has(last10);
+
+      if (isDuplicate) {
+        // Find the existing lead info for this phone
+        const existingLead = existingLeads.find(
+          l => l.phone.replace(/\D/g, '').slice(-10) === last10
+        );
+        duplicateDetails.push({
+          rowName: cleanRow['name'] || 'Unknown',
+          phone: rawPhone || last10,
+          existingLeadName: existingLead?.name || 'Unknown',
+          existingStatus: existingLead?.status || 'unknown',
+          existingAssignedTo: existingLead?.assignedTo?.name || null,
+        });
+        continue;
+      }
 
       let finalStatus = cleanRow['status'] ? cleanRow['status'].toLowerCase() : 'new';
       let finalAssignedTo = undefined;
@@ -970,19 +1008,16 @@ export const bulkUploadLeads = async (req, res, next) => {
           finalAssignedTo = emailToIdMap[valStr];
           finalAssignedToModel = idToModelMap[finalAssignedTo.toString()];
           if (finalStatus === 'new') finalStatus = 'assigned';
-        } else {
-          // If a direct MongoDB ObjectId is somehow provided
-          if (valStr.length === 24) {
-             finalAssignedTo = valStr;
-             finalAssignedToModel = 'User'; // fallback
-             if (finalStatus === 'new') finalStatus = 'assigned';
-          }
+        } else if (valStr.length === 24) {
+          finalAssignedTo = valStr;
+          finalAssignedToModel = 'User';
+          if (finalStatus === 'new') finalStatus = 'assigned';
         }
       }
 
       const leadDoc = {
         name: cleanRow['name'] || 'Unknown',
-        phone: cleanRow['phone'] ? String(cleanRow['phone']).trim() : '0000000000',
+        phone: rawPhone || '0000000000',
         email: cleanRow['email'] || '',
         source: cleanRow['source'] || 'Bulk Upload',
         status: finalStatus,
@@ -1000,27 +1035,36 @@ export const bulkUploadLeads = async (req, res, next) => {
         leadDoc.assignedByModel = creatorModel;
       }
 
-      return leadDoc;
-    });
+      leadsToInsert.push(leadDoc);
+    }
 
-    const result = await Lead.insertMany(leadsToInsert);
+    // ── Step 4: Insert only non-duplicate leads ───────────────────────
+    let insertedCount = 0;
+    if (leadsToInsert.length > 0) {
+      const result = await Lead.insertMany(leadsToInsert);
+      insertedCount = result.length;
+    }
 
-    // Notify admins about bulk upload
-    const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
-    for (const admin of admins) {
-      await sendNotification(
-        admin._id, 
-        '📊 Bulk Leads Uploaded', 
-        `${result.length} new leads were bulk uploaded by ${req.user.name}`, 
-        null
-      );
+    // ── Step 5: Notify admins ─────────────────────────────────────────
+    if (insertedCount > 0) {
+      const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
+      for (const admin of admins) {
+        await sendNotification(
+          admin._id,
+          '📊 Bulk Leads Uploaded',
+          `${insertedCount} new leads uploaded by ${req.user.name}. ${duplicateDetails.length} duplicates skipped.`,
+          null
+        );
+      }
     }
 
     res.status(201).json({
       status: 'success',
-      message: `${result.length} leads successfully uploaded`,
+      message: `${insertedCount} leads inserted, ${duplicateDetails.length} duplicates skipped.`,
       data: {
-        count: result.length
+        inserted: insertedCount,
+        duplicatesCount: duplicateDetails.length,
+        duplicates: duplicateDetails,
       }
     });
 

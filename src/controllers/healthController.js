@@ -8,7 +8,7 @@ export const getHealth = (req, res) => {
     status: 'success',
     message: 'Server is healthy',
     timestamp: new Date().toISOString(),
-    server: 'https://crm-backend-sfc6.onrender.com',
+    server: 'https://api.techcrm.cc',
     database: dbStatus,
   });
 };
