@@ -488,7 +488,7 @@ export const getUserHistory = async (req, res, next) => {
     // Stats queries for leads assigned to this user
     const totalLeads = await Lead.countDocuments({ assignedTo: userId });
     const convertedLeads = await Lead.countDocuments({ assignedTo: userId, status: { $in: ['converted', 'closed'] } });
-    const pendingLeads = await Lead.countDocuments({ assignedTo: userId, status: { $in: ['new', 'assigned', 'interested', 'in_process'] } });
+    const pendingLeads = await Lead.countDocuments({ assignedTo: userId, status: { $in: ['new', 'assigned', 'interested', 'in_process', 'call_done'] } });
     const missedFollowUps = await Lead.countDocuments({
       assignedTo: userId,
       followUpDate: { $lt: startOfToday },
@@ -500,7 +500,7 @@ export const getUserHistory = async (req, res, next) => {
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]);
 
-    const statsByStatus = { new: 0, assigned: 0, interested: 0, in_process: 0, not_interested: 0, converted: 0, closed: 0 };
+    const statsByStatus = { new: 0, assigned: 0, interested: 0, in_process: 0, not_interested: 0, converted: 0, closed: 0, call_done: 0 };
     statusBreakdown.forEach((item) => {
       if (item._id) statsByStatus[item._id] = item.count;
     });
@@ -580,7 +580,7 @@ export const getUsersTrackingSummary = async (req, res, next) => {
           },
           pendingLeads: {
             $sum: {
-              $cond: [{ $in: ['$status', ['new', 'assigned', 'interested', 'in_process']] }, 1, 0]
+              $cond: [{ $in: ['$status', ['new', 'assigned', 'interested', 'in_process', 'call_done']] }, 1, 0]
             }
           }
         }

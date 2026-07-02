@@ -73,7 +73,7 @@ export const getDashboardStats = async (req, res, next) => {
 
     // Format breakdown outputs
     const statsByStatus = {};
-    ['new', 'assigned', 'interested', 'not_interested', 'converted', 'closed'].forEach((status) => {
+    ['new', 'assigned', 'interested', 'not_interested', 'converted', 'closed', 'call_done'].forEach((status) => {
       statsByStatus[status] = 0;
     });
     statusBreakdown.forEach((item) => {
@@ -137,7 +137,7 @@ export const getDashboardStats = async (req, res, next) => {
         todayReminders,
         missedFollowUps,
         categories: {
-          pending: (statsByStatus.new || 0) + (statsByStatus.assigned || 0) + (statsByStatus.interested || 0),
+          pending: (statsByStatus.new || 0) + (statsByStatus.assigned || 0) + (statsByStatus.interested || 0) + (statsByStatus.call_done || 0),
           closed: (statsByStatus.converted || 0) + (statsByStatus.closed || 0),
           negative: statsByStatus.not_interested || 0,
           missed: missedFollowUps,
