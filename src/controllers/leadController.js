@@ -22,10 +22,10 @@ const sendNotification = async (recipientId, title, message, leadId) => {
 // Helper to format lead response with helper integration links
 const formatLeadWithIntegrations = (lead) => {
   const leadObj = lead.toObject ? lead.toObject() : lead;
-  
+
   // Clean phone number (leave only digits) for WhatsApp Link
   const cleanedPhone = leadObj.phone.replace(/\D/g, '');
-  
+
   // Add country code if not present (assuming +91 for India as default if length is 10, or leave as is)
   const phoneWithCountry = cleanedPhone.length === 10 ? `91${cleanedPhone}` : cleanedPhone;
 
@@ -328,7 +328,7 @@ export const updateLead = async (req, res, next) => {
     }
 
     const canUpdate =
-      ['superAdmin', 'admin'].includes(req.user.role) ||
+      ['superAdmin', 'admin', 'sales'].includes(req.user.role) ||
       (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canUpdate) {
@@ -350,7 +350,7 @@ export const updateLead = async (req, res, next) => {
           note: `[System] Lead automatically marked as Sale Confirmed (Closed Won) and transferred to Accounts Team.`,
           addedBy: req.user._id
         });
-        
+
         // Notify all admins about new sale
         const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
         for (const admin of admins) {
@@ -405,7 +405,7 @@ export const assignLead = async (req, res, next) => {
     }
 
     const canAssign =
-      ['superAdmin', 'admin'].includes(req.user.role) ||
+      ['superAdmin', 'admin', 'sales'].includes(req.user.role) ||
       (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canAssign) {
@@ -474,7 +474,7 @@ export const addRemark = async (req, res, next) => {
     }
 
     const canRemark =
-      ['superAdmin', 'admin'].includes(req.user.role) ||
+      ['superAdmin', 'admin', 'sales'].includes(req.user.role) ||
       (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canRemark) {
@@ -506,7 +506,7 @@ export const addRemark = async (req, res, next) => {
           note: `[System] Lead automatically marked as Sale Confirmed (Closed Won) and transferred to Accounts Team.`,
           addedBy: req.user._id
         });
-        
+
         // Notify all admins about new sale
         const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
         for (const admin of admins) {
@@ -605,7 +605,7 @@ export const updateSaleDetails = async (req, res, next) => {
     }
 
     const canModifySale =
-      ['superAdmin', 'admin'].includes(req.user.role) ||
+      ['superAdmin', 'admin', 'sales'].includes(req.user.role) ||
       (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canModifySale) {
@@ -658,7 +658,7 @@ export const uploadSaleDocuments = async (req, res, next) => {
     }
 
     const canUploadDoc =
-      ['superAdmin', 'admin'].includes(req.user.role) ||
+      ['superAdmin', 'admin', 'sales'].includes(req.user.role) ||
       (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canUploadDoc) {
@@ -706,7 +706,7 @@ export const transferToAccounts = async (req, res, next) => {
     }
 
     const canTransfer =
-      ['superAdmin', 'admin'].includes(req.user.role) ||
+      ['superAdmin', 'admin', 'sales'].includes(req.user.role) ||
       (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canTransfer) {
@@ -760,7 +760,7 @@ export const confirmSale = async (req, res, next) => {
     }
 
     const canConfirm =
-      ['superAdmin', 'admin'].includes(req.user.role) ||
+      ['superAdmin', 'admin', 'sales'].includes(req.user.role) ||
       (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canConfirm) {
@@ -809,7 +809,7 @@ export const confirmSale = async (req, res, next) => {
       lead.transferredToAccounts = true;
       lead.saleConfirmedAt = new Date();
       remarkNote += ` Transferred to Accounts Team. Remarks: ${accountRemarks || 'None'}`;
-      
+
       // Notify all admins about new sale
       const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
       for (const admin of admins) {
@@ -856,7 +856,7 @@ export const updateDeliveryStatus = async (req, res, next) => {
     }
 
     const canUpdateDelivery =
-      ['superAdmin', 'admin'].includes(req.user.role) ||
+      ['superAdmin', 'admin', 'sales'].includes(req.user.role) ||
       (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canUpdateDelivery) {
@@ -958,7 +958,7 @@ export const bulkUploadLeads = async (req, res, next) => {
       Object.keys(row).forEach(key => {
         cleanRow[key.trim().toLowerCase()] = row[key];
       });
-      const rawPhone  = cleanRow['phone'] ? String(cleanRow['phone']).trim() : '';
+      const rawPhone = cleanRow['phone'] ? String(cleanRow['phone']).trim() : '';
       const digitsOnly = rawPhone.replace(/\D/g, '');
       // Always store last 10 digits (strips country code like +91)
       const normalized = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : digitsOnly;
@@ -967,14 +967,14 @@ export const bulkUploadLeads = async (req, res, next) => {
 
     // ── Step 2: Separate invalid phone rows (not exactly 10 digits) ───
     const invalidRows = [];
-    const validRows   = [];
+    const validRows = [];
 
     for (const row of parsedRows) {
       if (row.normalized.length !== 10) {
         invalidRows.push({
           rowName: row.cleanRow['name'] || 'Unknown',
-          phone:   row.rawPhone || '(empty)',
-          reason:  row.rawPhone
+          phone: row.rawPhone || '(empty)',
+          reason: row.rawPhone
             ? `${row.normalized.length} digit(s) found — must be exactly 10`
             : 'Phone number is missing',
         });
@@ -987,8 +987,8 @@ export const bulkUploadLeads = async (req, res, next) => {
     const last10Phones = [...new Set(validRows.map(r => r.last10))];
     const existingLeads = last10Phones.length > 0
       ? await Lead.find({
-          $or: last10Phones.map(p => ({ phone: { $regex: p + '$' } }))
-        }).select('name phone status assignedTo').populate('assignedTo', 'name').lean()
+        $or: last10Phones.map(p => ({ phone: { $regex: p + '$' } }))
+      }).select('name phone status assignedTo').populate('assignedTo', 'name').lean()
       : [];
 
     const existingPhoneSet = new Set(
@@ -996,7 +996,7 @@ export const bulkUploadLeads = async (req, res, next) => {
     );
 
     // ── Step 4: Separate new vs duplicate rows ────────────────────────
-    const leadsToInsert   = [];
+    const leadsToInsert = [];
     const duplicateDetails = [];
 
     for (const { cleanRow, last10 } of validRows) {
@@ -1007,50 +1007,50 @@ export const bulkUploadLeads = async (req, res, next) => {
           l => l.phone.replace(/\D/g, '').slice(-10) === last10
         );
         duplicateDetails.push({
-          rowName:            cleanRow['name'] || 'Unknown',
-          phone:              last10,
-          existingLeadName:   existingLead?.name || 'Unknown',
-          existingStatus:     existingLead?.status || 'unknown',
+          rowName: cleanRow['name'] || 'Unknown',
+          phone: last10,
+          existingLeadName: existingLead?.name || 'Unknown',
+          existingStatus: existingLead?.status || 'unknown',
           existingAssignedTo: existingLead?.assignedTo?.name || null,
         });
         continue;
       }
 
-      let finalStatus          = cleanRow['status'] ? cleanRow['status'].toLowerCase() : 'new';
-      let finalAssignedTo      = undefined;
+      let finalStatus = cleanRow['status'] ? cleanRow['status'].toLowerCase() : 'new';
+      let finalAssignedTo = undefined;
       let finalAssignedToModel = undefined;
 
       const assignedToVal = cleanRow['assignedto'];
       if (assignedToVal) {
         const valStr = String(assignedToVal).trim().toLowerCase();
         if (emailToIdMap[valStr]) {
-          finalAssignedTo      = emailToIdMap[valStr];
+          finalAssignedTo = emailToIdMap[valStr];
           finalAssignedToModel = idToModelMap[finalAssignedTo.toString()];
           if (finalStatus === 'new') finalStatus = 'assigned';
         } else if (valStr.length === 24) {
-          finalAssignedTo      = valStr;
+          finalAssignedTo = valStr;
           finalAssignedToModel = 'User';
           if (finalStatus === 'new') finalStatus = 'assigned';
         }
       }
 
       const leadDoc = {
-        name:           cleanRow['name'] || 'Unknown',
-        phone:          last10,   // always store clean 10-digit number
-        email:          cleanRow['email'] || '',
-        source:         cleanRow['source'] || 'Bulk Upload',
-        status:         finalStatus,
-        priority:       cleanRow['priority'] ? cleanRow['priority'].toLowerCase() : 'medium',
-        tags:           cleanRow['tags'] ? String(cleanRow['tags']).split(',').map(t => t.trim()) : [],
-        createdBy:      req.user._id,
+        name: cleanRow['name'] || 'Unknown',
+        phone: last10,   // always store clean 10-digit number
+        email: cleanRow['email'] || '',
+        source: cleanRow['source'] || 'Bulk Upload',
+        status: finalStatus,
+        priority: cleanRow['priority'] ? cleanRow['priority'].toLowerCase() : 'medium',
+        tags: cleanRow['tags'] ? String(cleanRow['tags']).split(',').map(t => t.trim()) : [],
+        createdBy: req.user._id,
         createdByModel: creatorModel,
-        remarks:        cleanRow['remark'] ? [{ note: cleanRow['remark'], addedBy: req.user._id }] : [],
+        remarks: cleanRow['remark'] ? [{ note: cleanRow['remark'], addedBy: req.user._id }] : [],
       };
 
       if (finalAssignedTo) {
-        leadDoc.assignedTo      = finalAssignedTo;
+        leadDoc.assignedTo = finalAssignedTo;
         leadDoc.assignedToModel = finalAssignedToModel;
-        leadDoc.assignedBy      = req.user._id;
+        leadDoc.assignedBy = req.user._id;
         leadDoc.assignedByModel = creatorModel;
       }
 
@@ -1081,11 +1081,11 @@ export const bulkUploadLeads = async (req, res, next) => {
       status: 'success',
       message: `${insertedCount} inserted, ${duplicateDetails.length} duplicates skipped, ${invalidRows.length} invalid numbers skipped.`,
       data: {
-        inserted:        insertedCount,
+        inserted: insertedCount,
         duplicatesCount: duplicateDetails.length,
-        duplicates:      duplicateDetails,
-        invalidCount:    invalidRows.length,
-        invalid:         invalidRows,
+        duplicates: duplicateDetails,
+        invalidCount: invalidRows.length,
+        invalid: invalidRows,
       }
     });
 
