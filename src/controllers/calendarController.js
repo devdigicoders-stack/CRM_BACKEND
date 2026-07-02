@@ -25,15 +25,30 @@ export const getCalendarLeads = async (req, res, next) => {
     }
 
     const leads = await Lead.find(query)
-      .select('name phone email status priority followUpDate')
+      .select('name phone email status priority followUpDate remarks')
       .sort({ followUpDate: 1 })
       .lean();
 
+    const events = leads.map(lead => {
+      let meetingNote = "";
+      if (lead.remarks && lead.remarks.length > 0) {
+        // Try to find the remark matching "[Meeting]"
+        let meetingRemark = lead.remarks.find(r => r.note && r.note.startsWith("[Meeting]"));
+        // Otherwise, use the latest remark
+        if (!meetingRemark) {
+          meetingRemark = lead.remarks[lead.remarks.length - 1];
+        }
+        meetingNote = meetingRemark.note;
+      }
+      delete lead.remarks; // clean payload
+      return { ...lead, meetingNote };
+    });
+
     res.status(200).json({
       status: 'success',
-      results: leads.length,
+      results: events.length,
       data: {
-        events: leads,
+        events: events,
       },
     });
   } catch (error) {
