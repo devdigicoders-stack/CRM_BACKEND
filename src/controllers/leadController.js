@@ -461,7 +461,7 @@ export const assignLead = async (req, res, next) => {
 // @access  Private
 export const addRemark = async (req, res, next) => {
   try {
-    const { note, followUpDate, tags, priority, status } = req.body;
+    const { note, followUpDate, visitDate, tags, priority, status } = req.body;
 
     if (!note) {
       res.status(400);
@@ -492,6 +492,9 @@ export const addRemark = async (req, res, next) => {
     // Update secondary details if provided in request
     if (followUpDate !== undefined) {
       lead.followUpDate = followUpDate ? new Date(followUpDate) : null;
+    }
+    if (visitDate !== undefined) {
+      lead.visitDate = visitDate ? new Date(visitDate) : null;
     }
     if (tags) {
       lead.tags = tags;

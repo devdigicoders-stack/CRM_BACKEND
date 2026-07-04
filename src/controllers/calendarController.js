@@ -55,3 +55,59 @@ export const getCalendarLeads = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get leads scheduled for visit/demo within date range
+// @route   GET /api/v1/calendar/visits
+// @access  Private
+export const getVisitsCalendar = async (req, res, next) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    if (!startDate || !endDate) {
+      res.status(400);
+      throw new Error('Please provide startDate and endDate query parameters');
+    }
+
+    const query = {
+      visitDate: {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      },
+    };
+
+    // Access control: Staff members can only view their own visits
+    if (!['superAdmin', 'admin'].includes(req.user.role)) {
+      query.assignedTo = req.user._id;
+    }
+
+    const leads = await Lead.find(query)
+      .select('name phone email status priority visitDate remarks')
+      .sort({ visitDate: 1 })
+      .lean();
+
+    const events = leads.map(lead => {
+      let visitNote = "";
+      if (lead.remarks && lead.remarks.length > 0) {
+        // Try to find the remark matching "[Visit]"
+        let visitRemark = lead.remarks.find(r => r.note && r.note.startsWith("[Visit]"));
+        // Otherwise, use the latest remark
+        if (!visitRemark) {
+          visitRemark = lead.remarks[lead.remarks.length - 1];
+        }
+        visitNote = visitRemark.note;
+      }
+      delete lead.remarks; // clean payload
+      return { ...lead, visitNote };
+    });
+
+    res.status(200).json({
+      status: 'success',
+      results: events.length,
+      data: {
+        events: events,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -96,6 +96,9 @@ const leadSchema = new mongoose.Schema(
     followUpDate: {
       type: Date,
     },
+    visitDate: {
+      type: Date,
+    },
     remarks: [remarkSchema],
     verificationStatus: {
       type: String,

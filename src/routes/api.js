@@ -71,6 +71,7 @@ apiRouter.delete('/users/:id', protect, restrictTo('superAdmin'), userController
 
 // --- Calendar Routes ---
 apiRouter.get('/calendar', protect, calendarController.getCalendarLeads);
+apiRouter.get('/calendar/visits', protect, calendarController.getVisitsCalendar);
 
 // --- Notification Routes ---
 apiRouter.get('/notifications', protect, notificationController.getNotifications);
