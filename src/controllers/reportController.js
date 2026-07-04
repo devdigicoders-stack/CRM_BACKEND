@@ -217,19 +217,19 @@ const generateAnalyticsPipeline = (matchQuery) => {
               _id: null,
               totalLeads: { $sum: 1 },
               convertedLeads: {
-                $sum: { $cond: [{ $in: ['$status', ['converted', 'closed']] }, 1, 0] }
+                $sum: { $cond: [{ $or: [{ $in: ['$status', ['converted', 'closed']] }, { $eq: ['$transferredToInstallation', true] }] }, 1, 0] }
               },
               pendingLeads: {
-                $sum: { $cond: [{ $in: ['$status', ['new', 'assigned', 'interested', 'in_process']] }, 1, 0] }
+                $sum: { $cond: [{ $and: [{ $in: ['$status', ['new', 'assigned', 'interested', 'in_process']] }, { $ne: ['$transferredToInstallation', true] }] }, 1, 0] }
               },
               totalDealValue: {
-                $sum: { $cond: [{ $in: ['$status', ['converted', 'closed']] }, '$dealValue', 0] }
+                $sum: { $cond: [{ $or: [{ $in: ['$status', ['converted', 'closed']] }, { $eq: ['$transferredToInstallation', true] }] }, '$dealValue', 0] }
               },
               totalAmountPaid: {
-                $sum: { $cond: [{ $in: ['$status', ['converted', 'closed']] }, '$amountPaid', 0] }
+                $sum: { $cond: [{ $or: [{ $in: ['$status', ['converted', 'closed']] }, { $eq: ['$transferredToInstallation', true] }] }, '$amountPaid', 0] }
               },
               totalAmountPending: {
-                $sum: { $cond: [{ $in: ['$status', ['converted', 'closed']] }, '$pendingAmount', 0] }
+                $sum: { $cond: [{ $or: [{ $in: ['$status', ['converted', 'closed']] }, { $eq: ['$transferredToInstallation', true] }] }, '$pendingAmount', 0] }
               },
               totalInstallations: {
                 $sum: { $cond: [{ $eq: ['$transferredToInstallation', true] }, 1, 0] }
