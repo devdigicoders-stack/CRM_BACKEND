@@ -40,8 +40,9 @@ export const createNotificationAndSendPush = async ({ recipientId, title, messag
 export const generateMissedAlerts = async (userId, userRole) => {
   try {
     const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
     const query = {
-      followUpDate: { $lt: now },
+      followUpDate: { $lt: oneHourAgo },
       status: { $nin: ['converted', 'closed'] },
     };
 

@@ -52,10 +52,12 @@ export const getDashboardStats = async (req, res, next) => {
       followUpDate: { $gte: startOfToday, $lte: endOfToday },
     });
 
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
     // 4) Missed Follow-ups Count
     const missedFollowUps = await Lead.countDocuments({
       ...query,
-      followUpDate: { $lt: startOfToday },
+      followUpDate: { $lt: oneHourAgo },
       status: { $nin: ['converted', 'closed'] },
     });
 
@@ -214,9 +216,9 @@ export const getMissedFollowUps = async (req, res, next) => {
     }
 
     const nowM = new Date();
-    const startOfToday = new Date(Date.UTC(nowM.getUTCFullYear(), nowM.getUTCMonth(), nowM.getUTCDate(), 0, 0, 0, 0));
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
-    query.followUpDate = { $lt: startOfToday };
+    query.followUpDate = { $lt: oneHourAgo };
     query.status = { $nin: ['converted', 'closed'] };
 
     const leads = await Lead.find(query)
