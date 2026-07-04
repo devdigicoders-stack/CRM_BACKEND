@@ -225,6 +225,12 @@ const generateAnalyticsPipeline = (matchQuery) => {
               totalDealValue: {
                 $sum: { $cond: [{ $in: ['$status', ['converted', 'closed']] }, '$dealValue', 0] }
               },
+              totalAmountPaid: {
+                $sum: { $cond: [{ $in: ['$status', ['converted', 'closed']] }, '$amountPaid', 0] }
+              },
+              totalAmountPending: {
+                $sum: { $cond: [{ $in: ['$status', ['converted', 'closed']] }, '$pendingAmount', 0] }
+              },
               totalInstallations: {
                 $sum: { $cond: [{ $eq: ['$transferredToInstallation', true] }, 1, 0] }
               },
@@ -256,6 +262,7 @@ const formatAnalyticsResult = (result) => {
   const data = result[0];
   const totals = data.totals[0] || { 
     totalLeads: 0, convertedLeads: 0, pendingLeads: 0, totalDealValue: 0,
+    totalAmountPaid: 0, totalAmountPending: 0,
     totalInstallations: 0, pendingInstallations: 0, completedInstallations: 0
   };
   
@@ -273,6 +280,8 @@ const formatAnalyticsResult = (result) => {
     convertedLeads: totals.convertedLeads || 0,
     pendingLeads: totals.pendingLeads || 0,
     totalDealValue: totals.totalDealValue || 0,
+    totalAmountPaid: totals.totalAmountPaid || 0,
+    totalAmountPending: totals.totalAmountPending || 0,
     totalInstallations: totals.totalInstallations || 0,
     pendingInstallations: totals.pendingInstallations || 0,
     completedInstallations: totals.completedInstallations || 0,
