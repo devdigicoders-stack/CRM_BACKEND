@@ -318,7 +318,7 @@ export const getLeadById = async (req, res, next) => {
 // @access  Private
 export const updateLead = async (req, res, next) => {
   try {
-    const { name, phone, email, priority, tags, status } = req.body;
+    const { name, phone, email, priority, tags, status, isCallDone } = req.body;
 
     const lead = await Lead.findById(req.params.id);
 
@@ -342,6 +342,7 @@ export const updateLead = async (req, res, next) => {
     if (email) lead.email = email;
     if (priority) lead.priority = priority;
     if (tags) lead.tags = tags;
+    if (isCallDone !== undefined) lead.isCallDone = isCallDone;
     if (status) {
       if (status === 'converted' && lead.status !== 'converted') {
         lead.transferredToAccounts = true;

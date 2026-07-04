@@ -201,6 +201,10 @@ const leadSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    isCallDone: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
