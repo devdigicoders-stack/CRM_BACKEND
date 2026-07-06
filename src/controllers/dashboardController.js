@@ -384,6 +384,13 @@ export const getPerformanceAnalytics = async (req, res, next) => {
 export const getLeadAssignmentReport = async (req, res, next) => {
   try {
     const query = {};
+
+    if (req.user.role === 'crmuser') {
+      query.$or = [{ createdBy: req.user._id }, { assignedTo: req.user._id }];
+    } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
+      query.assignedTo = req.user._id;
+    }
+
     if (req.query.startDate && req.query.endDate) {
       query.createdAt = {
         $gte: new Date(req.query.startDate),
