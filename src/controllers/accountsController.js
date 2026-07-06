@@ -58,7 +58,7 @@ const statsKeyExists = (key, obj) => Object.prototype.hasOwnProperty.call(obj, k
 
 export const getAccountDashboard = async (req, res, next) => {
   try {
-    const baseQuery = { status: { $in: ['converted', 'closed'] }, transferredToAccounts: true };
+    const baseQuery = { transferredToAccounts: true };
     const totalClosedWon = await Lead.countDocuments(baseQuery);
     const pendingVerification = await Lead.countDocuments({ ...baseQuery, verificationStatus: 'pending' });
     const verifiedSales = await Lead.countDocuments({ ...baseQuery, verificationStatus: 'verified' });
@@ -80,7 +80,7 @@ export const getAccountDashboard = async (req, res, next) => {
 export const getClosedWonLeads = async (req, res, next) => {
   try {
     const { search, verificationStatus, paymentStatus, page = 1, limit = 20 } = req.query;
-    const query = { status: { $in: ['converted', 'closed'] }, transferredToAccounts: true };
+    const query = { transferredToAccounts: true };
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
