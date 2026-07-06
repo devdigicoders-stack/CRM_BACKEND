@@ -813,6 +813,7 @@ export const confirmSale = async (req, res, next) => {
     if (transferToAccounts === true) {
       lead.transferredToAccounts = true;
       lead.saleConfirmedAt = new Date();
+      lead.verificationStatus = 'pending'; // Reset verification status
       remarkNote += ` Transferred to Accounts Team. Remarks: ${accountRemarks || 'None'}`;
 
       // Notify all admins about new sale
@@ -939,22 +940,29 @@ export const bulkUploadLeads = async (req, res, next) => {
 
     const creatorModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
 
-    const allUsers = await User.find({}).select('_id email').lean();
-    const allAdmins = await Admin.find({}).select('_id email').lean();
+    const allUsers = await User.find({}).select('_id email name').lean();
+    const allAdmins = await Admin.find({}).select('_id email name').lean();
     const emailToIdMap = {};
+    const nameToIdMap = {};
     const idToModelMap = {};
 
     allUsers.forEach(u => {
       if (u.email) {
         emailToIdMap[u.email.toLowerCase()] = u._id;
-        idToModelMap[u._id.toString()] = 'User';
       }
+      if (u.name) {
+        nameToIdMap[u.name.trim().toLowerCase()] = u._id;
+      }
+      idToModelMap[u._id.toString()] = 'User';
     });
     allAdmins.forEach(a => {
       if (a.email) {
         emailToIdMap[a.email.toLowerCase()] = a._id;
-        idToModelMap[a._id.toString()] = 'Admin';
       }
+      if (a.name) {
+        nameToIdMap[a.name.trim().toLowerCase()] = a._id;
+      }
+      idToModelMap[a._id.toString()] = 'Admin';
     });
 
     // ── Step 1: Parse all rows ────────────────────────────────────────
@@ -1030,6 +1038,10 @@ export const bulkUploadLeads = async (req, res, next) => {
         const valStr = String(assignedToVal).trim().toLowerCase();
         if (emailToIdMap[valStr]) {
           finalAssignedTo = emailToIdMap[valStr];
+          finalAssignedToModel = idToModelMap[finalAssignedTo.toString()];
+          if (finalStatus === 'new') finalStatus = 'assigned';
+        } else if (nameToIdMap[valStr]) {
+          finalAssignedTo = nameToIdMap[valStr];
           finalAssignedToModel = idToModelMap[finalAssignedTo.toString()];
           if (finalStatus === 'new') finalStatus = 'assigned';
         } else if (valStr.length === 24) {
