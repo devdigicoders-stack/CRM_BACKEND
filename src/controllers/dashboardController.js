@@ -398,7 +398,11 @@ export const getLeadAssignmentReport = async (req, res, next) => {
       };
     }
 
-    const report = await Lead.aggregate([
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip = (page - 1) * limit;
+
+    const pipeline = [
       { $match: query },
       {
         $group: {
@@ -446,14 +450,31 @@ export const getLeadAssignmentReport = async (req, res, next) => {
       },
       {
         $sort: { date: -1, leadsAssigned: -1 }
+      },
+      {
+        $facet: {
+          metadata: [{ $count: "total" }],
+          data: [{ $skip: skip }, { $limit: limit }]
+        }
       }
-    ]);
+    ];
+
+    const reportAgg = await Lead.aggregate(pipeline);
+    const reportData = reportAgg[0].data;
+    const total = reportAgg[0].metadata[0] ? reportAgg[0].metadata[0].total : 0;
+    const totalPages = Math.ceil(total / limit);
 
     res.status(200).json({
       status: 'success',
-      results: report.length,
+      results: reportData.length,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages
+      },
       data: {
-        report
+        report: reportData
       }
     });
   } catch (error) {
