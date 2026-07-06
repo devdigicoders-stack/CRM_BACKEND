@@ -25,7 +25,7 @@ export const getCalendarLeads = async (req, res, next) => {
     }
 
     const leads = await Lead.find(query)
-      .select('name phone email status priority followUpDate remarks createdBy assignedTo')
+      .select('name phone email status priority followUpDate remarks createdBy createdByModel assignedTo assignedToModel')
       .populate('createdBy', 'name')
       .populate('assignedTo', 'name')
       .sort({ followUpDate: 1 })
@@ -83,7 +83,7 @@ export const getVisitsCalendar = async (req, res, next) => {
     }
 
     const leads = await Lead.find(query)
-      .select('name phone email status priority visitDate remarks createdBy assignedTo')
+      .select('name phone email status priority visitDate remarks createdBy createdByModel assignedTo assignedToModel')
       .populate('createdBy', 'name')
       .populate('assignedTo', 'name')
       .sort({ visitDate: 1 })
