@@ -90,46 +90,45 @@ export const getDashboardStats = async (req, res, next) => {
     // Lead Flow Monitoring (Calling Team vs Sales Panel vs Unassigned)
     let leadFlow = { callingTeam: 0, salesPanel: 0, unassigned: 0 };
     
-    if (['superAdmin', 'admin'].includes(req.user.role)) {
-      const flowData = await Lead.aggregate([
-        {
-          $lookup: {
-            from: 'users',
-            localField: 'assignedTo',
-            foreignField: '_id',
-            as: 'assignee'
-          }
-        },
-        {
-          $unwind: {
-            path: '$assignee',
-            preserveNullAndEmptyArrays: true
-          }
-        },
-        {
-          $group: {
-            _id: {
-              $cond: {
-                if: { $ifNull: ['$assignee', false] },
-                then: '$assignee.role',
-                else: 'unassigned'
-              }
-            },
-            count: { $sum: 1 }
-          }
+    const flowData = await Lead.aggregate([
+      { $match: query },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'assignedTo',
+          foreignField: '_id',
+          as: 'assignee'
         }
-      ]);
+      },
+      {
+        $unwind: {
+          path: '$assignee',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $cond: {
+              if: { $ifNull: ['$assignee', false] },
+              then: '$assignee.role',
+              else: 'unassigned'
+            }
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
 
-      flowData.forEach(item => {
-        if (item._id === 'calling') {
-          leadFlow.callingTeam = item.count;
-        } else if (item._id === 'sales') {
-          leadFlow.salesPanel = item.count;
-        } else if (item._id === 'unassigned') {
-          leadFlow.unassigned = item.count;
-        }
-      });
-    }
+    flowData.forEach(item => {
+      if (item._id === 'calling' || item._id === 'crmuser') {
+        leadFlow.callingTeam += item.count;
+      } else if (item._id === 'sales') {
+        leadFlow.salesPanel += item.count;
+      } else if (item._id === 'unassigned') {
+        leadFlow.unassigned += item.count;
+      }
+    });
 
     res.status(200).json({
       status: 'success',
@@ -372,6 +371,82 @@ export const getPerformanceAnalytics = async (req, res, next) => {
       data: {
         performance,
         callActivity
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get lead assignment report (date-wise and assignee-wise)
+// @route   GET /api/v1/dashboard/report
+// @access  Private (Super Admin, Admin, and Manager only)
+export const getLeadAssignmentReport = async (req, res, next) => {
+  try {
+    const query = {};
+    if (req.query.startDate && req.query.endDate) {
+      query.createdAt = {
+        $gte: new Date(req.query.startDate),
+        $lte: new Date(req.query.endDate)
+      };
+    }
+
+    const report = await Lead.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            assignee: "$assignedTo"
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id.assignee',
+          foreignField: '_id',
+          as: 'assigneeDoc'
+        }
+      },
+      {
+        $unwind: {
+          path: '$assigneeDoc',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          date: '$_id.date',
+          assignee: {
+            $cond: {
+              if: { $ifNull: ['$assigneeDoc', false] },
+              then: '$assigneeDoc.name',
+              else: 'Unassigned'
+            }
+          },
+          assigneeRole: {
+            $cond: {
+              if: { $ifNull: ['$assigneeDoc', false] },
+              then: '$assigneeDoc.role',
+              else: 'N/A'
+            }
+          },
+          leadsAssigned: '$count'
+        }
+      },
+      {
+        $sort: { date: -1, leadsAssigned: -1 }
+      }
+    ]);
+
+    res.status(200).json({
+      status: 'success',
+      results: report.length,
+      data: {
+        report
       }
     });
   } catch (error) {
