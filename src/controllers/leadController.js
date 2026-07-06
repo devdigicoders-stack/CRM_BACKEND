@@ -487,6 +487,7 @@ export const addRemark = async (req, res, next) => {
     lead.remarks.push({
       note,
       addedBy: req.user._id,
+      followUpDate: followUpDate ? new Date(followUpDate) : undefined,
     });
 
     // Update secondary details if provided in request

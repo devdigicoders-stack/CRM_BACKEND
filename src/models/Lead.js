@@ -16,6 +16,10 @@ const remarkSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    followUpDate: {
+      type: Date,
+      default: null,
+    },
   },
   { _id: true }
 );
