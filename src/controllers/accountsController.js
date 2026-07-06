@@ -153,8 +153,13 @@ export const uploadInvoice = async (req, res, next) => {
     if (!req.file) { res.status(400); throw new Error('Please upload an invoice file'); }
     const lead = await Lead.findById(req.params.id);
     if (!lead) { res.status(404); throw new Error('Lead not found'); }
+    
     lead.invoiceUrl = `/uploads/invoices/${req.file.filename}`;
-    lead.remarks.push({ note: `[Accounts Team] Invoice uploaded. File: ${req.file.originalname}`, addedBy: req.user._id });
+    if (req.body.awbNumber) {
+      lead.awbNumber = req.body.awbNumber;
+    }
+    
+    lead.remarks.push({ note: `[Accounts Team] Invoice uploaded. File: ${req.file.originalname}${req.body.awbNumber ? ` (AWB: ${req.body.awbNumber})` : ''}`, addedBy: req.user._id });
     const updatedLead = await lead.save();
 
     // Notify sales rep about invoice

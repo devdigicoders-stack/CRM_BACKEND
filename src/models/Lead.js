@@ -117,6 +117,10 @@ const leadSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    awbNumber: {
+      type: String,
+      trim: true,
+    },
     trackingId: {
       type: String,
       trim: true,
