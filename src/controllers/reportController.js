@@ -298,6 +298,7 @@ export const getComprehensiveReport = async (req, res, next) => {
   try {
     const baseQuery = getFilterQuery(req);
     // Remove the date filter if any so we can explicitly handle the date ranges
+    const customCreatedAt = baseQuery.createdAt;
     delete baseQuery.createdAt;
     delete baseQuery.followUpDate;
 
@@ -319,23 +320,34 @@ export const getComprehensiveReport = async (req, res, next) => {
     const monthQuery = { ...baseQuery, createdAt: { $gte: startOfMonth } };
     const yearQuery = { ...baseQuery, createdAt: { $gte: startOfYear } };
     const allTimeQuery = { ...baseQuery }; // No date restriction
+    const customQuery = customCreatedAt ? { ...baseQuery, createdAt: customCreatedAt } : null;
 
     // Execute parallel aggregations
-    const [todayRes, weekRes, monthRes, yearRes, allTimeRes] = await Promise.all([
+    const promises = [
       Lead.aggregate(generateAnalyticsPipeline(todayQuery)),
       Lead.aggregate(generateAnalyticsPipeline(weekQuery)),
       Lead.aggregate(generateAnalyticsPipeline(monthQuery)),
       Lead.aggregate(generateAnalyticsPipeline(yearQuery)),
       Lead.aggregate(generateAnalyticsPipeline(allTimeQuery)),
-    ]);
+    ];
+    
+    if (customQuery) {
+      promises.push(Lead.aggregate(generateAnalyticsPipeline(customQuery)));
+    }
+
+    const results = await Promise.all(promises);
 
     const analyticsData = {
-      today: formatAnalyticsResult(todayRes),
-      thisWeek: formatAnalyticsResult(weekRes),
-      thisMonth: formatAnalyticsResult(monthRes),
-      thisYear: formatAnalyticsResult(yearRes),
-      allTime: formatAnalyticsResult(allTimeRes),
+      today: formatAnalyticsResult(results[0]),
+      thisWeek: formatAnalyticsResult(results[1]),
+      thisMonth: formatAnalyticsResult(results[2]),
+      thisYear: formatAnalyticsResult(results[3]),
+      allTime: formatAnalyticsResult(results[4]),
     };
+    
+    if (customQuery) {
+      analyticsData.custom = formatAnalyticsResult(results[5]);
+    }
 
     res.status(200).json({
       status: 'success',

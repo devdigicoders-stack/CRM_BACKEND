@@ -488,10 +488,11 @@ export const getUserHistory = async (req, res, next) => {
     const totalLeads = await Lead.countDocuments({ assignedTo: userId });
     const convertedLeads = await Lead.countDocuments({ assignedTo: userId, status: { $in: ['converted', 'closed'] } });
     const pendingLeads = await Lead.countDocuments({ assignedTo: userId, status: { $in: ['new', 'assigned', 'interested', 'in_process', 'call_done'] } });
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
     const missedFollowUps = await Lead.countDocuments({
       assignedTo: userId,
-      followUpDate: { $lt: oneHourAgo },
+      followUpDate: { $lt: oneDayAgo },
       status: { $nin: ['converted', 'closed'] }
     });
 
