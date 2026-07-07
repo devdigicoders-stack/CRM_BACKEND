@@ -245,7 +245,19 @@ export const getPerformanceAnalytics = async (req, res, next) => {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
+    const matchStage = {};
+    if (req.query.startDate && req.query.endDate) {
+      const endOfDay = new Date(req.query.endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      matchStage.createdAt = {
+        $gte: new Date(req.query.startDate),
+        $lte: endOfDay
+      };
+    }
+
     const performance = await Lead.aggregate([
+      { $match: matchStage },
       {
         $group: {
           _id: '$assignedTo',
@@ -314,6 +326,7 @@ export const getPerformanceAnalytics = async (req, res, next) => {
 
     // Call Activity tracking (number of calls/remarks made by each team member)
     const callActivity = await Lead.aggregate([
+      { $match: matchStage },
       { $unwind: '$remarks' },
       {
         $group: {
