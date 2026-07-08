@@ -43,7 +43,7 @@ const formatLeadWithIntegrations = (lead) => {
 // @access  Private
 export const createLead = async (req, res, next) => {
   try {
-    const { name, phone, email, source, status, priority, tags, assignedTo, followUpDate, remark } = req.body;
+    const { name, phone, email, address, source, status, priority, tags, assignedTo, followUpDate, remark } = req.body;
 
     if (!name || !phone) {
       res.status(400);
@@ -66,6 +66,7 @@ export const createLead = async (req, res, next) => {
       name,
       phone,
       email,
+      address,
       source,
       status: finalStatus,
       priority,
@@ -318,7 +319,7 @@ export const getLeadById = async (req, res, next) => {
 // @access  Private
 export const updateLead = async (req, res, next) => {
   try {
-    const { name, phone, email, priority, tags, status, isCallDone } = req.body;
+    const { name, phone, email, address, priority, tags, status, isCallDone } = req.body;
 
     const lead = await Lead.findById(req.params.id);
 
@@ -340,6 +341,7 @@ export const updateLead = async (req, res, next) => {
     if (name) lead.name = name;
     if (phone) lead.phone = phone;
     if (email) lead.email = email;
+    if (address !== undefined) lead.address = address;
     if (priority) lead.priority = priority;
     if (tags) lead.tags = tags;
     if (isCallDone !== undefined) lead.isCallDone = isCallDone;
