@@ -61,7 +61,7 @@ apiRouter.post('/users', protect, restrictTo('superAdmin', 'admin'), checkPermis
 apiRouter.get('/users/installers', protect, restrictTo('superAdmin', 'admin', 'accountant'), userController.getInstallers);
 apiRouter.get('/users/tracking/summary', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.getUsersTrackingSummary);
 apiRouter.get('/users/:id/history', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.getUserHistory);
-apiRouter.get('/users', protect, restrictTo('superAdmin', 'admin','accountant'), checkPermission('users'), userController.getUsers);
+apiRouter.get('/users', protect, restrictTo('superAdmin', 'admin','accountant', 'crmuser', 'sales'), checkPermission('users'), userController.getUsers);
 apiRouter.get('/users/:id', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.getUserById);
 apiRouter.put('/users/:id', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.updateUser);
 apiRouter.put('/users/:id/password', protect, restrictTo('superAdmin'), userController.updateUserPassword);
