@@ -36,15 +36,30 @@ export const getDashboardStats = async (req, res, next) => {
     const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
     const endOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
 
+    const { date } = req.query;
+
+    if (date) {
+      // Date format is expected to be YYYY-MM-DD
+      const filterDateStart = new Date(date);
+      filterDateStart.setUTCHours(0, 0, 0, 0);
+      
+      const filterDateEnd = new Date(date);
+      filterDateEnd.setUTCHours(23, 59, 59, 999);
+      
+      query.createdAt = { $gte: filterDateStart, $lte: filterDateEnd };
+    }
+
     // 1) Total Leads Count
     const totalLeads = await Lead.countDocuments(query);
 
     // 2) Assigned Leads Count
-    const assignedLeads = await Lead.countDocuments(
-      isAdmin
-        ? { assignedTo: { $exists: true, $ne: null } }
-        : { assignedTo: req.user._id }
-    );
+    const assignedLeadsQuery = { ...query };
+    if (isAdmin) {
+      assignedLeadsQuery.assignedTo = { $exists: true, $ne: null };
+    } else {
+      assignedLeadsQuery.assignedTo = req.user._id;
+    }
+    const assignedLeads = await Lead.countDocuments(assignedLeadsQuery);
 
     // 3) Today's Reminders Count
     const todayReminders = await Lead.countDocuments({
