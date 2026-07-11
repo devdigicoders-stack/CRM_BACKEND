@@ -505,7 +505,8 @@ export const getUserHistory = async (req, res, next) => {
     // Stats queries for leads assigned to this user
     const totalLeads = await Lead.countDocuments(leadMatchQuery);
     const convertedLeads = await Lead.countDocuments({ ...leadMatchQuery, status: { $in: ['converted', 'closed'] } });
-    const pendingLeads = await Lead.countDocuments({ ...leadMatchQuery, status: { $in: ['new', 'assigned', 'interested', 'in_process', 'call_done'] } });
+    const pendingLeads = await Lead.countDocuments({ ...leadMatchQuery, status: { $in: ['new', 'assigned', 'interested', 'in_process', 'pending'] } });
+    const callDoneLeads = await Lead.countDocuments({ ...leadMatchQuery, status: 'call_done' });
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const missedFollowUps = await Lead.countDocuments({
@@ -575,6 +576,7 @@ export const getUserHistory = async (req, res, next) => {
           totalLeads,
           convertedLeads,
           pendingLeads,
+          callDoneLeads,
           missedFollowUps,
           statusBreakdown: statsByStatus
         },
@@ -630,7 +632,12 @@ export const getUsersTrackingSummary = async (req, res, next) => {
           },
           pendingLeads: {
             $sum: {
-              $cond: [{ $in: ['$status', ['new', 'assigned', 'interested', 'in_process', 'call_done']] }, 1, 0]
+              $cond: [{ $in: ['$status', ['new', 'assigned', 'interested', 'in_process', 'pending']] }, 1, 0]
+            }
+          },
+          callDoneLeads: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'call_done'] }, 1, 0]
             }
           }
         }
@@ -643,8 +650,10 @@ export const getUsersTrackingSummary = async (req, res, next) => {
       if (stat._id) {
         statsMap[stat._id.toString()] = {
           totalLeads: stat.totalLeads,
-          convertedLeads: stat.convertedLeads,
-          pendingLeads: stat.pendingLeads
+          convertedLeads: stat.convertedLeads || 0,
+          pendingLeads: stat.pendingLeads || 0,
+          callDoneLeads: stat.callDoneLeads || 0,
+          totalRemarks: 0,
         };
       }
     });
@@ -681,7 +690,7 @@ export const getUsersTrackingSummary = async (req, res, next) => {
     // Merge everything into the allUsers list
     const summary = allUsers.map((u) => {
       const uIdStr = u._id.toString();
-      const stats = statsMap[uIdStr] || { totalLeads: 0, convertedLeads: 0, pendingLeads: 0 };
+      const stats = statsMap[uIdStr] || { totalLeads: 0, convertedLeads: 0, pendingLeads: 0, callDoneLeads: 0 };
       const remarkActivity = remarksMap[uIdStr] || { totalRemarks: 0, latestRemarkDate: null };
 
       return {
