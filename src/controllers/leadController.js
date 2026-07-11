@@ -200,12 +200,15 @@ export const getLeads = async (req, res, next) => {
 
     // 2) Search parameter (matches name, phone, or email via regex)
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { tags: { $regex: search, $options: 'i' } },
-      ];
+      if (!query.$and) query.$and = [];
+      query.$and.push({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { phone: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+          { tags: { $regex: search, $options: 'i' } },
+        ]
+      });
     }
 
     // 3) Filters

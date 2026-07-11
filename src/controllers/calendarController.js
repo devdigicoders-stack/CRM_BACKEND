@@ -13,10 +13,20 @@ export const getCalendarLeads = async (req, res, next) => {
     }
 
     const query = {
-      followUpDate: {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate),
-      },
+      $or: [
+        {
+          followUpDate: {
+            $gte: new Date(startDate),
+            $lte: new Date(endDate),
+          }
+        },
+        {
+          'remarks.followUpDate': {
+            $gte: new Date(startDate),
+            $lte: new Date(endDate),
+          }
+        }
+      ]
     };
 
     // Access control: Staff members can only view their own followups
@@ -31,20 +41,52 @@ export const getCalendarLeads = async (req, res, next) => {
       .sort({ followUpDate: 1 })
       .lean();
 
-    const events = leads.map(lead => {
-      let meetingNote = "";
+    const events = [];
+    leads.forEach(lead => {
+      const datesAdded = new Set();
+      const addEvent = (dateObj, note, isHistorical) => {
+        if (!dateObj) return;
+        const dStr = new Date(dateObj).toISOString();
+        if (datesAdded.has(dStr)) return;
+        datesAdded.add(dStr);
+        events.push({
+          ...lead,
+          followUpDate: dateObj,
+          meetingNote: note || '',
+          status: isHistorical ? 'Meeting Done / Follow-up Completed' : lead.status,
+          remarks: undefined,
+        });
+      };
+
       if (lead.remarks && lead.remarks.length > 0) {
-        // Try to find the remark matching "[Meeting]"
-        let meetingRemark = lead.remarks.find(r => r.note && r.note.startsWith("[Meeting]"));
-        // Otherwise, use the latest remark
-        if (!meetingRemark) {
-          meetingRemark = lead.remarks[lead.remarks.length - 1];
-        }
-        meetingNote = meetingRemark.note;
+        lead.remarks.forEach(r => {
+          if (r.followUpDate) {
+            const rDate = new Date(r.followUpDate);
+            if (rDate >= new Date(startDate) && rDate <= new Date(endDate)) {
+              const isHistorical = lead.followUpDate && new Date(lead.followUpDate).getTime() !== rDate.getTime();
+              let statusText = r.note || '';
+              addEvent(r.followUpDate, statusText, isHistorical);
+            }
+          }
+        });
       }
-      delete lead.remarks; // clean payload
-      return { ...lead, meetingNote };
+
+      if (lead.followUpDate) {
+        const mDate = new Date(lead.followUpDate);
+        if (mDate >= new Date(startDate) && mDate <= new Date(endDate)) {
+          let meetingNote = "";
+          if (lead.remarks && lead.remarks.length > 0) {
+            let meetingRemark = lead.remarks.find(r => r.note && r.note.startsWith("[Meeting]"));
+            if (!meetingRemark) meetingRemark = lead.remarks[lead.remarks.length - 1];
+            meetingNote = meetingRemark.note;
+          }
+          addEvent(lead.followUpDate, meetingNote, false);
+        }
+      }
     });
+
+    // Sort events correctly
+    events.sort((a, b) => new Date(a.followUpDate) - new Date(b.followUpDate));
 
     res.status(200).json({
       status: 'success',
