@@ -207,14 +207,25 @@ export const getLeads = async (req, res, next) => {
     // 2) Search parameter (matches name, phone, or email via regex)
     if (search) {
       if (!query.$and) query.$and = [];
-      query.$and.push({
-        $or: [
-          { name: { $regex: search, $options: 'i' } },
-          { phone: { $regex: search, $options: 'i' } },
-          { email: { $regex: search, $options: 'i' } },
-          { tags: { $regex: search, $options: 'i' } },
-        ]
-      });
+      
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const cleanPhoneSearch = search.replace(/\D/g, '');
+      
+      const orConditions = [
+        { name: { $regex: escapedSearch, $options: 'i' } },
+        { phone: { $regex: escapedSearch, $options: 'i' } },
+        { email: { $regex: escapedSearch, $options: 'i' } },
+        { tags: { $regex: escapedSearch, $options: 'i' } },
+      ];
+
+      if (cleanPhoneSearch.length >= 10) {
+        const last10 = cleanPhoneSearch.slice(-10);
+        orConditions.push({ phone: { $regex: last10 } });
+      } else if (cleanPhoneSearch.length > 0) {
+        orConditions.push({ phone: { $regex: cleanPhoneSearch } });
+      }
+
+      query.$and.push({ $or: orConditions });
     }
 
     // 3) Filters
