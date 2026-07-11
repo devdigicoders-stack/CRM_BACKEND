@@ -505,8 +505,11 @@ export const getUserHistory = async (req, res, next) => {
     // Stats queries for leads assigned to this user
     const totalLeads = await Lead.countDocuments(leadMatchQuery);
     const convertedLeads = await Lead.countDocuments({ ...leadMatchQuery, status: { $in: ['converted', 'closed'] } });
-    const pendingLeads = await Lead.countDocuments({ ...leadMatchQuery, status: { $in: ['new', 'assigned', 'interested', 'in_process', 'pending'] } });
-    const callDoneLeads = await Lead.countDocuments({ ...leadMatchQuery, status: 'call_done' });
+    
+    // Call Done = Leads with at least 1 remark. Pending Calls = Leads with 0 remarks.
+    // For single user history, we can check where `remarks.0` exists
+    const callDoneLeads = await Lead.countDocuments({ ...leadMatchQuery, 'remarks.0': { $exists: true } });
+    const pendingLeads = totalLeads - callDoneLeads;
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const missedFollowUps = await Lead.countDocuments({
@@ -632,12 +635,12 @@ export const getUsersTrackingSummary = async (req, res, next) => {
           },
           pendingLeads: {
             $sum: {
-              $cond: [{ $in: ['$status', ['new', 'assigned', 'interested', 'in_process', 'pending']] }, 1, 0]
+              $cond: [{ $eq: [{ $size: { $ifNull: ['$remarks', []] } }, 0] }, 1, 0]
             }
           },
           callDoneLeads: {
             $sum: {
-              $cond: [{ $eq: ['$status', 'call_done'] }, 1, 0]
+              $cond: [{ $gt: [{ $size: { $ifNull: ['$remarks', []] } }, 0] }, 1, 0]
             }
           }
         }
