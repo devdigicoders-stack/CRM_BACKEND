@@ -206,21 +206,39 @@ export const exportLeadsPdf = async (req, res, next) => {
 };
 
 // Helper for comprehensive report
-const generateAnalyticsPipeline = (matchQuery) => {
+const generateAnalyticsPipeline = (baseQuery, dateFilter) => {
+  const createMatch = dateFilter ? { ...baseQuery, createdAt: dateFilter } : baseQuery;
+  const saleMatch = dateFilter ? {
+    ...baseQuery,
+    $or: [
+      { saleConfirmedAt: dateFilter },
+      { saleConfirmedAt: { $exists: false }, updatedAt: dateFilter }
+    ]
+  } : baseQuery;
+  const installMatch = dateFilter ? { ...baseQuery, updatedAt: dateFilter } : baseQuery;
+
   return [
-    { $match: matchQuery },
     {
       $facet: {
-        totals: [
+        createdTotals: [
+          { $match: createMatch },
           {
             $group: {
               _id: null,
               totalLeads: { $sum: 1 },
-              convertedLeads: {
-                $sum: { $cond: [{ $or: [{ $in: ['$status', ['converted', 'closed']] }, { $eq: ['$transferredToInstallation', true] }] }, 1, 0] }
-              },
               pendingLeads: {
                 $sum: { $cond: [{ $and: [{ $in: ['$status', ['new', 'assigned', 'interested', 'in_process']] }, { $ne: ['$transferredToInstallation', true] }] }, 1, 0] }
+              }
+            }
+          }
+        ],
+        saleTotals: [
+          { $match: saleMatch },
+          {
+            $group: {
+              _id: null,
+              convertedLeads: {
+                $sum: { $cond: [{ $or: [{ $in: ['$status', ['converted', 'closed']] }, { $eq: ['$transferredToInstallation', true] }] }, 1, 0] }
               },
               totalDealValue: {
                 $sum: { $cond: [{ $or: [{ $in: ['$status', ['converted', 'closed']] }, { $eq: ['$transferredToInstallation', true] }] }, '$dealValue', 0] }
@@ -230,7 +248,15 @@ const generateAnalyticsPipeline = (matchQuery) => {
               },
               totalAmountPending: {
                 $sum: { $cond: [{ $or: [{ $in: ['$status', ['converted', 'closed']] }, { $eq: ['$transferredToInstallation', true] }] }, '$pendingAmount', 0] }
-              },
+              }
+            }
+          }
+        ],
+        installTotals: [
+          { $match: installMatch },
+          {
+            $group: {
+              _id: null,
               totalInstallations: {
                 $sum: { $cond: [{ $eq: ['$transferredToInstallation', true] }, 1, 0] }
               },
@@ -244,12 +270,15 @@ const generateAnalyticsPipeline = (matchQuery) => {
           }
         ],
         statusBreakdown: [
+          { $match: createMatch },
           { $group: { _id: '$status', count: { $sum: 1 } } }
         ],
         sourceBreakdown: [
+          { $match: createMatch },
           { $group: { _id: '$source', count: { $sum: 1 } } }
         ],
         priorityBreakdown: [
+          { $match: createMatch },
           { $group: { _id: '$priority', count: { $sum: 1 } } }
         ]
       }
@@ -260,11 +289,9 @@ const generateAnalyticsPipeline = (matchQuery) => {
 const formatAnalyticsResult = (result) => {
   if (!result || !result.length) return null;
   const data = result[0];
-  const totals = data.totals[0] || { 
-    totalLeads: 0, convertedLeads: 0, pendingLeads: 0, totalDealValue: 0,
-    totalAmountPaid: 0, totalAmountPending: 0,
-    totalInstallations: 0, pendingInstallations: 0, completedInstallations: 0
-  };
+  const createdTotals = data.createdTotals[0] || { totalLeads: 0, pendingLeads: 0 };
+  const saleTotals = data.saleTotals[0] || { convertedLeads: 0, totalDealValue: 0, totalAmountPaid: 0, totalAmountPending: 0 };
+  const installTotals = data.installTotals[0] || { totalInstallations: 0, pendingInstallations: 0, completedInstallations: 0 };
   
   const statusBreakdown = {};
   data.statusBreakdown.forEach(item => { statusBreakdown[item._id] = item.count; });
@@ -276,15 +303,15 @@ const formatAnalyticsResult = (result) => {
   data.priorityBreakdown.forEach(item => { priorityBreakdown[item._id] = item.count; });
 
   return {
-    totalLeads: totals.totalLeads || 0,
-    convertedLeads: totals.convertedLeads || 0,
-    pendingLeads: totals.pendingLeads || 0,
-    totalDealValue: totals.totalDealValue || 0,
-    totalAmountPaid: totals.totalAmountPaid || 0,
-    totalAmountPending: totals.totalAmountPending || 0,
-    totalInstallations: totals.totalInstallations || 0,
-    pendingInstallations: totals.pendingInstallations || 0,
-    completedInstallations: totals.completedInstallations || 0,
+    totalLeads: createdTotals.totalLeads || 0,
+    convertedLeads: saleTotals.convertedLeads || 0,
+    pendingLeads: createdTotals.pendingLeads || 0,
+    totalDealValue: saleTotals.totalDealValue || 0,
+    totalAmountPaid: saleTotals.totalAmountPaid || 0,
+    totalAmountPending: saleTotals.totalAmountPending || 0,
+    totalInstallations: installTotals.totalInstallations || 0,
+    pendingInstallations: installTotals.pendingInstallations || 0,
+    completedInstallations: installTotals.completedInstallations || 0,
     statusBreakdown,
     sourceBreakdown,
     priorityBreakdown
@@ -315,24 +342,17 @@ export const getComprehensiveReport = async (req, res, next) => {
     
     const startOfYear = new Date(now.getFullYear(), 0, 1);
 
-    const todayQuery = { ...baseQuery, createdAt: { $gte: startOfToday } };
-    const weekQuery = { ...baseQuery, createdAt: { $gte: startOfWeek } };
-    const monthQuery = { ...baseQuery, createdAt: { $gte: startOfMonth } };
-    const yearQuery = { ...baseQuery, createdAt: { $gte: startOfYear } };
-    const allTimeQuery = { ...baseQuery }; // No date restriction
-    const customQuery = customCreatedAt ? { ...baseQuery, createdAt: customCreatedAt } : null;
-
     // Execute parallel aggregations
     const promises = [
-      Lead.aggregate(generateAnalyticsPipeline(todayQuery)),
-      Lead.aggregate(generateAnalyticsPipeline(weekQuery)),
-      Lead.aggregate(generateAnalyticsPipeline(monthQuery)),
-      Lead.aggregate(generateAnalyticsPipeline(yearQuery)),
-      Lead.aggregate(generateAnalyticsPipeline(allTimeQuery)),
+      Lead.aggregate(generateAnalyticsPipeline(baseQuery, { $gte: startOfToday })),
+      Lead.aggregate(generateAnalyticsPipeline(baseQuery, { $gte: startOfWeek })),
+      Lead.aggregate(generateAnalyticsPipeline(baseQuery, { $gte: startOfMonth })),
+      Lead.aggregate(generateAnalyticsPipeline(baseQuery, { $gte: startOfYear })),
+      Lead.aggregate(generateAnalyticsPipeline(baseQuery, null)), // all time
     ];
     
-    if (customQuery) {
-      promises.push(Lead.aggregate(generateAnalyticsPipeline(customQuery)));
+    if (customCreatedAt) {
+      promises.push(Lead.aggregate(generateAnalyticsPipeline(baseQuery, customCreatedAt)));
     }
 
     const results = await Promise.all(promises);
@@ -345,7 +365,7 @@ export const getComprehensiveReport = async (req, res, next) => {
       allTime: formatAnalyticsResult(results[4]),
     };
     
-    if (customQuery) {
+    if (customCreatedAt) {
       analyticsData.custom = formatAnalyticsResult(results[5]);
     }
 
