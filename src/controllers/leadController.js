@@ -220,9 +220,11 @@ export const getLeads = async (req, res, next) => {
 
       if (cleanPhoneSearch.length >= 10) {
         const last10 = cleanPhoneSearch.slice(-10);
-        orConditions.push({ phone: { $regex: last10 } });
+        const flexibleRegex = last10.split('').join('\\D*');
+        orConditions.push({ phone: { $regex: flexibleRegex, $options: 'i' } });
       } else if (cleanPhoneSearch.length > 0) {
-        orConditions.push({ phone: { $regex: cleanPhoneSearch } });
+        const flexibleRegex = cleanPhoneSearch.split('').join('\\D*');
+        orConditions.push({ phone: { $regex: flexibleRegex, $options: 'i' } });
       }
 
       query.$and.push({ $or: orConditions });
