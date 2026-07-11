@@ -58,13 +58,12 @@ const statsKeyExists = (key, obj) => Object.prototype.hasOwnProperty.call(obj, k
 
 export const getAccountDashboard = async (req, res, next) => {
   try {
-    const baseQuery = { transferredToAccounts: true };
-    const totalClosedWon = await Lead.countDocuments(baseQuery);
-    const pendingVerification = await Lead.countDocuments({ ...baseQuery, verificationStatus: 'pending' });
-    const verifiedSales = await Lead.countDocuments({ ...baseQuery, verificationStatus: 'verified' });
-    const rejectedSales = await Lead.countDocuments({ ...baseQuery, verificationStatus: 'rejected' });
+    const totalClosedWon = await Lead.countDocuments({ transferredToAccounts: true });
+    const pendingVerification = await Lead.countDocuments({ transferredToAccounts: true, verificationStatus: 'pending' });
+    const verifiedSales = await Lead.countDocuments({ transferredToAccounts: true, verificationStatus: 'verified' });
+    const rejectedSales = await Lead.countDocuments({ verificationStatus: 'rejected' });
     const paymentStatusBreakdown = await Lead.aggregate([
-      { $match: baseQuery },
+      { $match: { transferredToAccounts: true } },
       { $group: { _id: '$paymentStatus', count: { $sum: 1 } } }
     ]);
     const paymentStats = { pending: 0, partial: 0, completed: 0 };
@@ -80,7 +79,16 @@ export const getAccountDashboard = async (req, res, next) => {
 export const getClosedWonLeads = async (req, res, next) => {
   try {
     const { search, verificationStatus, paymentStatus, page = 1, limit = 20 } = req.query;
-    const query = { transferredToAccounts: true };
+    
+    // Base query logic: if rejected, it's no longer transferredToAccounts
+    const query = {};
+    if (verificationStatus === 'rejected') {
+      query.verificationStatus = 'rejected';
+    } else {
+      query.transferredToAccounts = true;
+      if (verificationStatus) query.verificationStatus = verificationStatus;
+    }
+
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -88,7 +96,6 @@ export const getClosedWonLeads = async (req, res, next) => {
         { email: { $regex: search, $options: 'i' } }
       ];
     }
-    if (verificationStatus) query.verificationStatus = verificationStatus;
     if (paymentStatus) query.paymentStatus = paymentStatus;
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
