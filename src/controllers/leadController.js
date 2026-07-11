@@ -8,9 +8,12 @@ import { Admin } from '../models/Admin.js';
 import { Notification } from '../models/Notification.js';
 import { sendPushNotification } from '../config/firebase.js';
 
-const sendNotification = async (recipientId, title, message, leadId) => {
+const sendNotification = async (recipientId, title, message, leadId, metadata = null, type = 'general') => {
   try {
-    await Notification.create({ title, message, recipient: recipientId, lead: leadId, type: 'general' });
+    const payload = { title, message, recipient: recipientId, type };
+    if (leadId) payload.lead = leadId;
+    if (metadata) payload.metadata = metadata;
+    await Notification.create(payload);
     let recipient = await User.findById(recipientId).select('fcmToken').lean();
     if (!recipient) recipient = await Admin.findById(recipientId).select('fcmToken').lean();
     if (recipient?.fcmToken) await sendPushNotification(recipient.fcmToken, title, message, { leadId: leadId?.toString() });
@@ -201,6 +204,7 @@ export const getLeads = async (req, res, next) => {
         { name: { $regex: search, $options: 'i' } },
         { phone: { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } },
+        { tags: { $regex: search, $options: 'i' } },
       ];
     }
 
@@ -1091,7 +1095,9 @@ export const bulkUploadLeads = async (req, res, next) => {
           admin._id,
           '📊 Bulk Leads Uploaded',
           `${insertedCount} leads inserted by ${req.user.name}. ${duplicateDetails.length} duplicates & ${invalidRows.length} invalid numbers skipped.`,
-          null
+          null,
+          { invalidNumbers: invalidRows },
+          'bulk_upload'
         );
       }
     }
