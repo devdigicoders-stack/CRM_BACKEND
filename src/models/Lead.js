@@ -28,7 +28,6 @@ const leadSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, 'Please provide the lead name'],
       trim: true,
     },
     phone: {
