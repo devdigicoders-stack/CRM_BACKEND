@@ -187,7 +187,13 @@ export const getLeads = async (req, res, next) => {
 
     // 1) Security constraint
     if (['superAdmin', 'admin'].includes(req.user.role)) {
-      if (assignedTo) query.assignedTo = assignedTo;
+      if (assignedTo) {
+        if (assignedTo === 'unassigned') {
+          query.assignedTo = { $eq: null };
+        } else {
+          query.assignedTo = assignedTo;
+        }
+      }
     } else if (req.user.role === 'crmuser') {
       // crmuser can see leads they created OR leads assigned to them
       query.$or = [
