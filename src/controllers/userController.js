@@ -469,6 +469,19 @@ export const registerFcmToken = async (req, res, next) => {
 export const getUserHistory = async (req, res, next) => {
   try {
     const userId = req.params.id;
+    const { startDate, endDate } = req.query;
+
+    let dateFilter = {};
+    if (startDate && endDate) {
+      dateFilter = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    } else if (startDate) {
+      dateFilter = { $gte: new Date(startDate) };
+    } else if (endDate) {
+      dateFilter = { $lte: new Date(endDate) };
+    }
 
     // Verify target user exists
     let targetUser = await Admin.findById(userId).select('-password').lean();
@@ -481,23 +494,28 @@ export const getUserHistory = async (req, res, next) => {
       throw new Error('User not found');
     }
 
+    const leadMatchQuery = { assignedTo: userId };
+    if (Object.keys(dateFilter).length > 0) {
+      leadMatchQuery.createdAt = dateFilter;
+    }
+
     // Dates for statistics
     const now = new Date();
     const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
     // Stats queries for leads assigned to this user
-    const totalLeads = await Lead.countDocuments({ assignedTo: userId });
-    const convertedLeads = await Lead.countDocuments({ assignedTo: userId, status: { $in: ['converted', 'closed'] } });
-    const pendingLeads = await Lead.countDocuments({ assignedTo: userId, status: { $in: ['new', 'assigned', 'interested', 'in_process', 'call_done'] } });
+    const totalLeads = await Lead.countDocuments(leadMatchQuery);
+    const convertedLeads = await Lead.countDocuments({ ...leadMatchQuery, status: { $in: ['converted', 'closed'] } });
+    const pendingLeads = await Lead.countDocuments({ ...leadMatchQuery, status: { $in: ['new', 'assigned', 'interested', 'in_process', 'call_done'] } });
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const missedFollowUps = await Lead.countDocuments({
-      assignedTo: userId,
+      ...leadMatchQuery,
       followUpDate: { $lt: oneDayAgo },
       status: { $nin: ['converted', 'closed'] }
     });
 
     const statusBreakdown = await Lead.aggregate([
-      { $match: { assignedTo: new mongoose.Types.ObjectId(userId) } },
+      { $match: { assignedTo: new mongoose.Types.ObjectId(userId), ...(Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {}) } },
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]);
 
@@ -507,14 +525,19 @@ export const getUserHistory = async (req, res, next) => {
     });
 
     // Fetch detailed list of assigned leads
-    const leadsList = await Lead.find({ assignedTo: userId })
+    const leadsList = await Lead.find(leadMatchQuery)
       .populate('createdBy', 'name email')
       .populate('assignedBy', 'name email role')
       .sort({ updatedAt: -1 })
       .lean();
 
+    const remarkMatchQuery = { 'remarks.addedBy': userId };
+    if (Object.keys(dateFilter).length > 0) {
+      remarkMatchQuery['remarks.createdAt'] = dateFilter;
+    }
+
     // Query remarks added by this user (activity log)
-    const leadsWithRemarks = await Lead.find({ 'remarks.addedBy': userId })
+    const leadsWithRemarks = await Lead.find(remarkMatchQuery)
       .select('name phone email status remarks')
       .lean();
 
@@ -522,15 +545,21 @@ export const getUserHistory = async (req, res, next) => {
     leadsWithRemarks.forEach((lead) => {
       lead.remarks.forEach((remark) => {
         if (remark.addedBy && remark.addedBy.toString() === userId.toString()) {
-          activityLog.push({
-            leadId: lead._id,
-            leadName: lead.name,
-            leadPhone: lead.phone,
-            leadStatus: lead.status,
-            remarkId: remark._id,
-            note: remark.note,
-            createdAt: remark.createdAt
-          });
+          let inRange = true;
+          if (startDate) inRange = inRange && new Date(remark.createdAt) >= new Date(startDate);
+          if (endDate) inRange = inRange && new Date(remark.createdAt) <= new Date(endDate);
+          
+          if (inRange) {
+            activityLog.push({
+              leadId: lead._id,
+              leadName: lead.name,
+              leadPhone: lead.phone,
+              leadStatus: lead.status,
+              remarkId: remark._id,
+              note: remark.note,
+              createdAt: remark.createdAt
+            });
+          }
         }
       });
     });
@@ -563,13 +592,33 @@ export const getUserHistory = async (req, res, next) => {
 // @access  Private (Super Admin and Admin only)
 export const getUsersTrackingSummary = async (req, res, next) => {
   try {
+    const { startDate, endDate } = req.query;
+
+    let dateFilter = {};
+    if (startDate && endDate) {
+      dateFilter = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    } else if (startDate) {
+      dateFilter = { $gte: new Date(startDate) };
+    } else if (endDate) {
+      dateFilter = { $lte: new Date(endDate) };
+    }
+
     // 1) Fetch all users and admins
     const users = await User.find({}).select('name email role phone active profilePic').lean();
     const admins = await Admin.find({}).select('name email role phone active profilePic').lean();
     const allUsers = [...admins, ...users];
 
     // 2) Get lead stats breakdown grouped by assignedTo
+    const leadMatch = {};
+    if (Object.keys(dateFilter).length > 0) {
+      leadMatch.createdAt = dateFilter;
+    }
+
     const statsGrouped = await Lead.aggregate([
+      ...(Object.keys(dateFilter).length > 0 ? [{ $match: leadMatch }] : []),
       {
         $group: {
           _id: '$assignedTo',
@@ -601,8 +650,14 @@ export const getUsersTrackingSummary = async (req, res, next) => {
     });
 
     // 3) Get remarks activity stats
+    const remarkMatch = {};
+    if (Object.keys(dateFilter).length > 0) {
+      remarkMatch['remarks.createdAt'] = dateFilter;
+    }
+
     const remarksActivity = await Lead.aggregate([
       { $unwind: '$remarks' },
+      ...(Object.keys(dateFilter).length > 0 ? [{ $match: remarkMatch }] : []),
       {
         $group: {
           _id: '$remarks.addedBy',
