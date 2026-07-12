@@ -436,7 +436,6 @@ export const getLeadAssignmentReport = async (req, res, next) => {
       {
         $group: {
           _id: {
-            date: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
             assignee: "$assignedTo"
           },
           count: { $sum: 1 }
@@ -459,7 +458,6 @@ export const getLeadAssignmentReport = async (req, res, next) => {
       {
         $project: {
           _id: 0,
-          date: '$_id.date',
           assignee: {
             $cond: {
               if: { $ifNull: ['$assigneeDoc', false] },
@@ -478,7 +476,7 @@ export const getLeadAssignmentReport = async (req, res, next) => {
         }
       },
       {
-        $sort: { date: -1, leadsAssigned: -1 }
+        $sort: { leadsAssigned: -1 }
       },
       {
         $facet: {
