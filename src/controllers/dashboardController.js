@@ -419,9 +419,11 @@ export const getLeadAssignmentReport = async (req, res, next) => {
     }
 
     if (req.query.startDate && req.query.endDate) {
+      const endOfDay = new Date(req.query.endDate);
+      endOfDay.setHours(23, 59, 59, 999);
       query.createdAt = {
         $gte: new Date(req.query.startDate),
-        $lte: new Date(req.query.endDate)
+        $lte: endOfDay
       };
     }
 
