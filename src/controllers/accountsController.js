@@ -123,7 +123,7 @@ export const verifySale = async (req, res, next) => {
     }
     const lead = await Lead.findById(req.params.id);
     if (!lead) { res.status(404); throw new Error('Lead not found'); }
-    if (!['converted', 'closed'].includes(lead.status)) {
+    if (verificationStatus === 'verified' && !['converted', 'closed'].includes(lead.status)) {
       res.status(400);
       throw new Error('Only closed won (converted/closed) sales can be verified');
     }
