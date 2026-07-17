@@ -400,6 +400,15 @@ export const updateLead = async (req, res, next) => {
         for (const admin of admins) {
           sendNotification(admin._id, '💰 New Sale Confirmed (Auto)', `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko auto-transfer ho gayi by ${req.user.name}`, lead._id).catch(err => console.error(err));
         }
+
+        // Notify accounts team
+        const accountants = await User.find({ role: 'accountant', active: true }).select('_id').lean();
+        for (const acc of accountants) {
+          sendNotification(acc._id, '💰 New Sale Confirmed (Auto)', `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko auto-transfer ho gayi by ${req.user.name}`, lead._id).catch(err => console.error(err));
+        }
+      }
+      if (['converted', 'closed', 'not_interested'].includes(status)) {
+        lead.followUpDate = null;
       }
       lead.status = status;
     }
@@ -560,6 +569,15 @@ export const addRemark = async (req, res, next) => {
         for (const admin of admins) {
           sendNotification(admin._id, '💰 New Sale Confirmed (Auto)', `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko auto-transfer ho gayi by ${req.user.name}`, lead._id).catch(err => console.error(err));
         }
+
+        // Notify accounts team
+        const accountants = await User.find({ role: 'accountant', active: true }).select('_id').lean();
+        for (const acc of accountants) {
+          sendNotification(acc._id, '💰 New Sale Confirmed (Auto)', `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko auto-transfer ho gayi by ${req.user.name}`, lead._id).catch(err => console.error(err));
+        }
+      }
+      if (['converted', 'closed', 'not_interested'].includes(status)) {
+        lead.followUpDate = null;
       }
       lead.status = status;
     }
@@ -782,6 +800,12 @@ export const transferToAccounts = async (req, res, next) => {
       await sendNotification(admin._id, '💰 New Sale Confirmed', `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko transfer ho gayi by ${req.user.name}`, lead._id);
     }
 
+    // Notify accounts team
+    const accountants = await User.find({ role: 'accountant', active: true }).select('_id').lean();
+    for (const acc of accountants) {
+      await sendNotification(acc._id, '💰 New Sale Confirmed', `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko transfer ho gayi by ${req.user.name}`, lead._id);
+    }
+
     res.status(200).json({
       status: 'success',
       data: {
@@ -864,6 +888,17 @@ export const confirmSale = async (req, res, next) => {
       for (const admin of admins) {
         await sendNotification(
           admin._id,
+          '💰 New Sale Confirmed',
+          `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko transfer ho gayi by ${req.user.name}`,
+          lead._id
+        ).catch(err => console.error(err));
+      }
+
+      // Notify accounts team
+      const accountants = await User.find({ role: 'accountant', active: true }).select('_id').lean();
+      for (const acc of accountants) {
+        await sendNotification(
+          acc._id,
           '💰 New Sale Confirmed',
           `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko transfer ho gayi by ${req.user.name}`,
           lead._id

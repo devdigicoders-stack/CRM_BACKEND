@@ -380,4 +380,113 @@ export const getComprehensiveReport = async (req, res, next) => {
 };
 
 
-// Trigger nodemon restart
+// @desc    Get Details list for a specific KPI
+// @route   GET /api/v1/reports/kpi-details
+// @access  Private (Super Admin, Admin, and Manager only)
+export const getKpiDetails = async (req, res, next) => {
+  try {
+    const { type, timeframe, startDate, endDate } = req.query;
+    
+    // Build date filter based on timeframe or start/end dates
+    let dateFilter = null;
+    if (startDate || endDate) {
+      dateFilter = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        dateFilter.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.$lte = end;
+      }
+    } else if (timeframe && timeframe !== 'allTime') {
+      const now = new Date();
+      dateFilter = {};
+      
+      if (timeframe === 'today') {
+        const start = new Date(now);
+        start.setHours(0, 0, 0, 0);
+        dateFilter.$gte = start;
+      } else if (timeframe === 'thisWeek') {
+        const start = new Date(now);
+        start.setDate(now.getDate() - now.getDay());
+        start.setHours(0, 0, 0, 0);
+        dateFilter.$gte = start;
+      } else if (timeframe === 'thisMonth') {
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        dateFilter.$gte = start;
+      } else if (timeframe === 'thisYear') {
+        const start = new Date(now.getFullYear(), 0, 1);
+        dateFilter.$gte = start;
+      }
+    }
+
+    // Use base filter for access control
+    const baseQuery = getFilterQuery(req);
+    delete baseQuery.createdAt;
+    delete baseQuery.followUpDate;
+
+    const query = { ...baseQuery };
+    
+    // Setup conditions based on KPI type
+    switch (type) {
+      case 'totalLeads':
+        if (dateFilter) query.createdAt = dateFilter;
+        break;
+      case 'pendingLeads':
+        if (dateFilter) query.createdAt = dateFilter;
+        query.status = { $in: ['new', 'assigned', 'interested', 'in_process'] };
+        query.transferredToInstallation = { $ne: true };
+        break;
+      case 'convertedLeads':
+      case 'totalDealValue':
+      case 'amountPaid':
+      case 'amountPending':
+        if (dateFilter) {
+          query.$or = [
+            { saleConfirmedAt: dateFilter },
+            { saleConfirmedAt: { $exists: false }, updatedAt: dateFilter }
+          ];
+        }
+        query.$or = [
+          ...(query.$or || []),
+          { status: { $in: ['converted', 'closed'] } },
+          { transferredToInstallation: true }
+        ];
+        break;
+      case 'totalInstallations':
+        if (dateFilter) query.updatedAt = dateFilter;
+        query.transferredToInstallation = true;
+        break;
+      case 'pendingInstallations':
+        if (dateFilter) query.updatedAt = dateFilter;
+        query.transferredToInstallation = true;
+        query.installationStatus = { $in: ['assigned', 'in_progress'] };
+        break;
+      case 'completedInstallations':
+        if (dateFilter) query.updatedAt = dateFilter;
+        query.transferredToInstallation = true;
+        query.installationStatus = 'completed';
+        break;
+      default:
+        if (dateFilter) query.createdAt = dateFilter;
+    }
+
+    const leads = await Lead.find(query)
+      .populate('assignedTo', 'name email')
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      status: 'success',
+      count: leads.length,
+      data: leads
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};

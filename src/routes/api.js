@@ -79,6 +79,7 @@ apiRouter.put('/notifications/:id/read', protect, notificationController.markAsR
 
 // --- Report Routes ---
 apiRouter.get('/reports/analytics', protect, restrictTo('superAdmin', 'admin', 'manager', 'sales'), checkPermission('reports'), reportController.getComprehensiveReport);
+apiRouter.get('/reports/kpi-details', protect, restrictTo('superAdmin', 'admin', 'manager', 'sales'), checkPermission('reports'), reportController.getKpiDetails);
 apiRouter.get('/reports/export/excel', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('reports'), reportController.exportLeadsExcel);
 apiRouter.get('/reports/export/pdf', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('reports'), reportController.exportLeadsPdf);
 
