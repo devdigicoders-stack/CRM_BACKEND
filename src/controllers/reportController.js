@@ -444,17 +444,22 @@ export const getKpiDetails = async (req, res, next) => {
       case 'totalDealValue':
       case 'amountPaid':
       case 'amountPending':
-        if (dateFilter) {
-          query.$or = [
-            { saleConfirmedAt: dateFilter },
-            { saleConfirmedAt: { $exists: false }, updatedAt: dateFilter }
-          ];
-        }
-        query.$or = [
-          ...(query.$or || []),
-          { status: { $in: ['converted', 'closed'] } },
-          { transferredToInstallation: true }
+        query.$and = [
+          {
+            $or: [
+              { status: { $in: ['converted', 'closed'] } },
+              { transferredToInstallation: true }
+            ]
+          }
         ];
+        if (dateFilter) {
+          query.$and.push({
+            $or: [
+              { saleConfirmedAt: dateFilter },
+              { saleConfirmedAt: { $exists: false }, updatedAt: dateFilter }
+            ]
+          });
+        }
         break;
       case 'totalInstallations':
         if (dateFilter) query.updatedAt = dateFilter;
