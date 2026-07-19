@@ -671,10 +671,18 @@ export const getUsersTrackingSummary = async (req, res, next) => {
       { $unwind: '$remarks' },
       ...(Object.keys(dateFilter).length > 0 ? [{ $match: remarkMatch }] : []),
       {
+        // First group by user and lead to ensure we count unique leads, not multiple remarks per lead
         $group: {
-          _id: '$remarks.addedBy',
-          totalRemarks: { $sum: 1 },
+          _id: { user: '$remarks.addedBy', lead: '$_id' },
           latestRemarkDate: { $max: '$remarks.createdAt' }
+        }
+      },
+      {
+        // Then group by user to count total unique leads with remarks
+        $group: {
+          _id: '$_id.user',
+          totalRemarks: { $sum: 1 },
+          latestRemarkDate: { $max: '$latestRemarkDate' }
         }
       }
     ]);
