@@ -655,7 +655,10 @@ export const uploadPaymentScreenshotMiddleware = multer({
   storage: paymentScreenshotStorage,
   fileFilter: paymentScreenshotFileFilter,
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB
-}).single('paymentScreenshot');
+}).fields([
+  { name: 'paymentScreenshot', maxCount: 1 },
+  { name: 'paymentScreenshots', maxCount: 5 }
+]);
 
 // @desc    Update Product / Service Details and Deal Value / Sale Amount
 // @route   PUT /api/v1/leads/:id/sale-details
@@ -857,7 +860,10 @@ export const confirmSale = async (req, res, next) => {
       res.status(400);
       throw new Error('Pending amount is required and must be a number');
     }
-    if (!req.file && !lead.paymentScreenshot) {
+    const hasNewScreenshot = req.files && (req.files.paymentScreenshot || req.files.paymentScreenshots);
+    const hasOldScreenshot = lead.paymentScreenshot || (lead.paymentScreenshots && lead.paymentScreenshots.length > 0);
+    
+    if (!hasNewScreenshot && !hasOldScreenshot) {
       res.status(400);
       throw new Error('Payment screenshot is required');
     }
@@ -868,8 +874,18 @@ export const confirmSale = async (req, res, next) => {
     lead.pendingAmount = pendingAmount;
     if (accountRemarks) lead.accountRemarks = accountRemarks;
 
-    if (req.file) {
-      lead.paymentScreenshot = `/uploads/payments/${req.file.filename}`;
+    if (req.files) {
+      let uploadedUrls = [];
+      if (req.files.paymentScreenshots) {
+        uploadedUrls = req.files.paymentScreenshots.map(f => `/uploads/payments/${f.filename}`);
+      } else if (req.files.paymentScreenshot) {
+        uploadedUrls = [`/uploads/payments/${req.files.paymentScreenshot[0].filename}`];
+      }
+      
+      if (uploadedUrls.length > 0) {
+        lead.paymentScreenshot = uploadedUrls[0]; // backward compatibility
+        lead.paymentScreenshots = [...(lead.paymentScreenshots || []), ...uploadedUrls];
+      }
     }
 
     // Set status to converted (Closed Won)

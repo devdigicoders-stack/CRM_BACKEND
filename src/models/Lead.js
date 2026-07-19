@@ -167,6 +167,12 @@ const leadSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    paymentScreenshots: [
+      {
+        type: String,
+        trim: true,
+      }
+    ],
     saleDocumentsUrl: {
       type: String,
       trim: true,
