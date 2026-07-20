@@ -654,10 +654,10 @@ const paymentScreenshotFileFilter = (req, file, cb) => {
 export const uploadPaymentScreenshotMiddleware = multer({
   storage: paymentScreenshotStorage,
   fileFilter: paymentScreenshotFileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 }
 }).fields([
-  { name: 'paymentScreenshot', maxCount: 1 },
-  { name: 'paymentScreenshots', maxCount: 5 }
+  { name: 'paymentScreenshot', maxCount: 10 },
+  { name: 'paymentScreenshots', maxCount: 10 }
 ]);
 
 // @desc    Update Product / Service Details and Deal Value / Sale Amount
@@ -876,15 +876,17 @@ export const confirmSale = async (req, res, next) => {
 
     if (req.files) {
       let uploadedUrls = [];
-      if (req.files.paymentScreenshots) {
-        uploadedUrls = req.files.paymentScreenshots.map(f => `/uploads/payments/${f.filename}`);
-      } else if (req.files.paymentScreenshot) {
-        uploadedUrls = [`/uploads/payments/${req.files.paymentScreenshot[0].filename}`];
+      if (req.files.paymentScreenshots && req.files.paymentScreenshots.length > 0) {
+        uploadedUrls.push(...req.files.paymentScreenshots.map(f => `/uploads/payments/${f.filename}`));
+      }
+      if (req.files.paymentScreenshot && req.files.paymentScreenshot.length > 0) {
+        uploadedUrls.push(...req.files.paymentScreenshot.map(f => `/uploads/payments/${f.filename}`));
       }
       
       if (uploadedUrls.length > 0) {
-        lead.paymentScreenshot = uploadedUrls[0]; // backward compatibility
-        lead.paymentScreenshots = [...(lead.paymentScreenshots || []), ...uploadedUrls];
+        const combined = Array.from(new Set([...(lead.paymentScreenshots || []), ...uploadedUrls]));
+        lead.paymentScreenshots = combined;
+        lead.paymentScreenshot = combined[0];
       }
     }
 
