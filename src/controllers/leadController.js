@@ -381,8 +381,9 @@ export const updateLead = async (req, res, next) => {
     // Update fields if provided
     if (name) lead.name = name;
     if (phone) lead.phone = phone;
-    if (email) lead.email = email;
+    if (email !== undefined) lead.email = email;
     if (address !== undefined) lead.address = address;
+    if (source !== undefined) lead.source = source;
     if (priority) lead.priority = priority;
     if (tags) lead.tags = tags;
     if (isCallDone !== undefined) lead.isCallDone = isCallDone;
