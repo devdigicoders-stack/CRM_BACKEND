@@ -360,7 +360,7 @@ export const getLeadById = async (req, res, next) => {
 // @access  Private
 export const updateLead = async (req, res, next) => {
   try {
-    const { name, phone, email, address, priority, tags, status, isCallDone } = req.body;
+    const { name, phone, email, address, source, priority, tags, status, isCallDone } = req.body;
 
     const lead = await Lead.findById(req.params.id);
 
