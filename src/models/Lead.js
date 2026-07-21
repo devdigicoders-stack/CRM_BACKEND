@@ -217,6 +217,11 @@ const leadSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    installationIssueType: {
+      type: String,
+      enum: ['issue', 'delay'],
+      default: null,
+    },
     installationIssueRemarks: {
       type: String,
       trim: true,

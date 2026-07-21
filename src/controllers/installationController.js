@@ -113,7 +113,23 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
     }
 
     if (status) query.installationStatus = status;
-    if (issueReported) query.installationIssueReported = issueReported === 'true';
+    if (issueReported) {
+      if (issueReported === 'true') {
+        query.installationIssueReported = true;
+      } else if (issueReported === 'false') {
+        query.installationIssueReported = false;
+      } else if (issueReported === 'issue') {
+        query.installationIssueReported = true;
+        query.$or = [
+          { installationIssueType: 'issue' },
+          { installationIssueType: { $exists: false } },
+          { installationIssueType: null }
+        ];
+      } else if (issueReported === 'delay') {
+        query.installationIssueReported = true;
+        query.installationIssueType = 'delay';
+      }
+    }
 
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
@@ -220,7 +236,7 @@ export const assignInstallationRep = async (req, res, next) => {
 // @access  Private (Admins and Installers only)
 export const updateInstallationStatus = async (req, res, next) => {
   try {
-    const { status, progressRemarks } = req.body;
+    const { status, progressRemarks, clearIssue, resolveIssue } = req.body;
 
     if (!status || !['assigned', 'in_progress', 'completed'].includes(status.toLowerCase())) {
       res.status(400);
@@ -247,12 +263,19 @@ export const updateInstallationStatus = async (req, res, next) => {
     lead.installationStatus = normalizedStatus;
     if (progressRemarks) lead.installationProgressRemarks = progressRemarks;
 
+    // Clear active issue/delay if explicitly requested or setting to completed
+    if (clearIssue || resolveIssue || normalizedStatus === 'completed') {
+      lead.installationIssueReported = false;
+      lead.installationIssueType = null;
+      lead.installationIssueRemarks = '';
+    }
+
     // Sync main lead status with installation status
     if (normalizedStatus === 'in_progress') lead.status = 'in_process';
     else if (normalizedStatus === 'completed') lead.status = 'closed';
 
     lead.remarks.push({
-      note: `[Installation Team] Status updated to: ${normalizedStatus.toUpperCase()}. Progress: ${progressRemarks || 'None'}`,
+      note: `[Installation Team] Status updated to: ${normalizedStatus.toUpperCase()}. Progress: ${progressRemarks || 'None'}${clearIssue || resolveIssue ? ' (Issue/Delay cleared)' : ''}`,
       addedBy: req.user._id
     });
 
@@ -337,7 +360,7 @@ export const uploadInstallationProof = async (req, res, next) => {
 // @access  Private (Admins and Installers only)
 export const reportInstallationIssue = async (req, res, next) => {
   try {
-    const { issueRemarks } = req.body;
+    const { issueRemarks, issueType } = req.body;
 
     if (!issueRemarks) {
       res.status(400);
@@ -356,19 +379,61 @@ export const reportInstallationIssue = async (req, res, next) => {
       throw new Error('You do not have permission to modify this installation');
     }
 
+    const type = ['issue', 'delay'].includes(issueType?.toLowerCase()) ? issueType.toLowerCase() : 'issue';
     lead.installationIssueReported = true;
+    lead.installationIssueType = type;
     lead.installationIssueRemarks = issueRemarks;
     lead.remarks.push({
-      note: `[Installation Team] 🚨 ISSUE/DELAY REPORTED: ${issueRemarks}`,
+      note: `[Installation Team] ${type === 'delay' ? '⏳ DELAY' : '🚨 ISSUE'} REPORTED: ${issueRemarks}`,
       addedBy: req.user._id
     });
     const updatedLead = await lead.save();
 
-    // Notify admins about issue
+    // Notify admins about issue/delay
     const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
     for (const admin of admins) {
-      await sendNotification(admin._id, '🚨 Installation Issue Reported', `Lead "${lead.name}" mein installation issue report hua: ${issueRemarks}`, lead._id);
+      await sendNotification(admin._id, type === 'delay' ? '⏳ Installation Delay Reported' : '🚨 Installation Issue Reported', `Lead "${lead.name}" mein ${type} report hua: ${issueRemarks}`, lead._id);
     }
+
+    res.status(200).json({
+      status: 'success',
+      data: { lead: formatLeadWithIntegrations(updatedLead) }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Resolve / Clear reported Issue or Delay
+// @route   PUT /api/v1/installation/leads/:id/resolve-issue
+// @access  Private (Admins and Installers only)
+export const resolveInstallationIssue = async (req, res, next) => {
+  try {
+    const { resolutionRemarks } = req.body;
+
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) {
+      res.status(404);
+      throw new Error('Lead not found');
+    }
+
+    const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('You do not have permission to modify this installation');
+    }
+
+    lead.installationIssueReported = false;
+    lead.installationIssueType = null;
+    const oldRemarks = lead.installationIssueRemarks;
+    lead.installationIssueRemarks = '';
+
+    lead.remarks.push({
+      note: `[Installation Team] ✅ ISSUE/DELAY RESOLVED: ${resolutionRemarks || `Resolved active issue/delay (${oldRemarks || 'Flag cleared'})`}`,
+      addedBy: req.user._id
+    });
+
+    const updatedLead = await lead.save();
 
     res.status(200).json({
       status: 'success',
