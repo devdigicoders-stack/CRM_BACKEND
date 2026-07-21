@@ -335,8 +335,8 @@ export const getLeadById = async (req, res, next) => {
     const hasAccess =
       ['superAdmin', 'admin'].includes(req.user.role) ||
       (req.user.role === 'crmuser' && (createdById === userId || assignedId === userId)) ||
-      (req.user.role === 'accountant' && lead.transferredToAccounts === true) ||
-      (req.user.role === 'installation' && installationRepId === userId) ||
+      (req.user.role === 'accountant' && (lead.transferredToAccounts === true || lead.verificationStatus === 'rejected')) ||
+      (req.user.role === 'installation' && (installationRepId === userId || lead.transferredToInstallation === true)) ||
       assignedId === userId;
 
     if (!hasAccess) {
