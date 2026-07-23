@@ -532,7 +532,7 @@ export const getUserHistory = async (req, res, next) => {
     const leadsList = await Lead.find(leadMatchQuery)
       .populate('createdBy', 'name email')
       .populate('assignedBy', 'name email role')
-      .sort({ updatedAt: -1 })
+      .sort({ createdAt: -1 })
       .lean();
 
     const remarkMatchQuery = { 'remarks.addedBy': userId };

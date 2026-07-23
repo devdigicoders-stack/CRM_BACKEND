@@ -202,10 +202,14 @@ const leadSchema = new mongoose.Schema(
     },
     installationStatus: {
       type: String,
-      enum: ['assigned', 'in_progress', 'completed'],
+      enum: ['assigned', 'in_progress', 'in_transit', 'completed'],
       default: 'assigned',
     },
     installationProgressRemarks: {
+      type: String,
+      trim: true,
+    },
+    inTransitRemarks: {
       type: String,
       trim: true,
     },

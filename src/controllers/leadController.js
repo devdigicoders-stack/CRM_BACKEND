@@ -277,12 +277,12 @@ export const getLeads = async (req, res, next) => {
     const total = await Lead.countDocuments(query);
     let limitNum = total;
 
-    // Execute query sorted by latest updated lead
+    // Execute query sorted by creation date so updated leads keep their position
     let queryBuilder = Lead.find(query)
       .populate('assignedTo', 'name email role')
       .populate('createdBy', 'name email')
       .populate('assignedBy', 'name email role')
-      .sort({ updatedAt: -1 });
+      .sort({ createdAt: -1 });
 
     if (limit !== undefined) {
       const parsedLimit = parseInt(limit, 10);

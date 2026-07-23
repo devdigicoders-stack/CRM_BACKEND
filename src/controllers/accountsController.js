@@ -104,7 +104,7 @@ export const getClosedWonLeads = async (req, res, next) => {
     const leads = await Lead.find(query)
       .populate('assignedTo', 'name email role')
       .populate('remarks.addedBy', 'name email role')
-      .sort({ updatedAt: -1 })
+      .sort({ createdAt: -1 })
       .skip(skipNum)
       .limit(limitNum)
       .lean();

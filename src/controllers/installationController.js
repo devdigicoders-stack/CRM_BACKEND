@@ -139,7 +139,7 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
     const leads = await Lead.find(query)
       .populate('installationRep', 'name email role')
       .populate('assignedTo', 'name email role')
-      .sort({ updatedAt: -1 })
+      .sort({ createdAt: -1 })
       .skip(skipNum)
       .limit(limitNum)
       .lean();
@@ -238,9 +238,9 @@ export const updateInstallationStatus = async (req, res, next) => {
   try {
     const { status, progressRemarks, clearIssue, resolveIssue } = req.body;
 
-    if (!status || !['assigned', 'in_progress', 'completed'].includes(status.toLowerCase())) {
+    if (!status || !['assigned', 'in_progress', 'in_transit', 'completed'].includes(status.toLowerCase())) {
       res.status(400);
-      throw new Error('Invalid installation status. Allowed: assigned, in_progress, completed');
+      throw new Error('Invalid installation status. Allowed: assigned, in_progress, in_transit, completed');
     }
 
     const lead = await Lead.findById(req.params.id);
@@ -261,7 +261,12 @@ export const updateInstallationStatus = async (req, res, next) => {
       throw new Error('Please upload an installation proof document/image before completing the installation');
     }
     lead.installationStatus = normalizedStatus;
-    if (progressRemarks) lead.installationProgressRemarks = progressRemarks;
+    if (progressRemarks) {
+      lead.installationProgressRemarks = progressRemarks;
+      if (normalizedStatus === 'in_transit') {
+        lead.inTransitRemarks = progressRemarks;
+      }
+    }
 
     // Clear active issue/delay if explicitly requested or setting to completed
     if (clearIssue || resolveIssue || normalizedStatus === 'completed') {
@@ -271,11 +276,11 @@ export const updateInstallationStatus = async (req, res, next) => {
     }
 
     // Sync main lead status with installation status
-    if (normalizedStatus === 'in_progress') lead.status = 'in_process';
+    if (normalizedStatus === 'in_progress' || normalizedStatus === 'in_transit') lead.status = 'in_process';
     else if (normalizedStatus === 'completed') lead.status = 'closed';
 
     lead.remarks.push({
-      note: `[Installation Team] Status updated to: ${normalizedStatus.toUpperCase()}. Progress: ${progressRemarks || 'None'}${clearIssue || resolveIssue ? ' (Issue/Delay cleared)' : ''}`,
+      note: `[Installation Team] Status updated to: ${normalizedStatus.toUpperCase()}. Progress/Transit Note: ${progressRemarks || 'None'}${clearIssue || resolveIssue ? ' (Issue/Delay cleared)' : ''}`,
       addedBy: req.user._id
     });
 
