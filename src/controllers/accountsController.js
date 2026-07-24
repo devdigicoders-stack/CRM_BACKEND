@@ -157,21 +157,37 @@ export const verifySale = async (req, res, next) => {
 
 export const uploadInvoice = async (req, res, next) => {
   try {
-    if (!req.file) { res.status(400); throw new Error('Please upload an invoice file'); }
-    const lead = await Lead.findById(req.params.id);
-    if (!lead) { res.status(404); throw new Error('Lead not found'); }
-    
-    lead.invoiceUrl = `/uploads/invoices/${req.file.filename}`;
-    if (req.body.awbNumber) {
-      lead.awbNumber = req.body.awbNumber;
+    const { awbNumber } = req.body;
+    if (!awbNumber || !awbNumber.trim()) {
+      res.status(400);
+      throw new Error('AWB / Tracking Number is required');
     }
-    
-    lead.remarks.push({ note: `[Accounts Team] Invoice uploaded. File: ${req.file.originalname}${req.body.awbNumber ? ` (AWB: ${req.body.awbNumber})` : ''}`, addedBy: req.user._id });
+
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) {
+      res.status(404);
+      throw new Error('Lead not found');
+    }
+
+    if (!req.file && !lead.invoiceUrl) {
+      res.status(400);
+      throw new Error('Please upload an invoice file');
+    }
+
+    if (req.file) {
+      lead.invoiceUrl = `/uploads/invoices/${req.file.filename}`;
+    }
+    lead.awbNumber = awbNumber.trim();
+
+    lead.remarks.push({
+      note: `[Accounts Team] Invoice & AWB details updated. AWB: ${lead.awbNumber}${req.file ? `, File: ${req.file.originalname}` : ''}`,
+      addedBy: req.user._id
+    });
     const updatedLead = await lead.save();
 
     // Notify sales rep about invoice
     if (lead.assignedTo) {
-      await sendNotification(lead.assignedTo, '🧾 Invoice Uploaded', `Lead "${lead.name}" ke liye invoice upload ho gayi`, lead._id);
+      await sendNotification(lead.assignedTo, '🧾 Invoice & AWB Updated', `Lead "${lead.name}" ke liye invoice aur AWB number update ho gaya (AWB: ${lead.awbNumber})`, lead._id);
     }
 
     res.status(200).json({ status: 'success', data: { lead: formatLeadWithIntegrations(updatedLead) } });

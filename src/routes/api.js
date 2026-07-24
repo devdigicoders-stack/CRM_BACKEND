@@ -99,6 +99,8 @@ apiRouter.get('/installation/leads', protect, restrictTo('superAdmin', 'admin', 
 apiRouter.put('/installation/leads/:id/assign-rep', protect, restrictTo('superAdmin', 'admin', 'accountant'), installationController.assignInstallationRep);
 apiRouter.put('/installation/leads/:id/status', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.updateInstallationStatus);
 apiRouter.put('/installation/leads/:id/proof', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.uploadProofMiddleware, installationController.uploadInstallationProof);
+apiRouter.delete('/installation/leads/:id/proof', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.deleteInstallationProof);
 apiRouter.put('/installation/leads/:id/issue', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.reportInstallationIssue);
 apiRouter.put('/installation/leads/:id/resolve-issue', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.resolveInstallationIssue);
+apiRouter.put('/installation/leads/:id/clear-transit-remark', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.clearInTransitRemark);
 

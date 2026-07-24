@@ -35,19 +35,19 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.svg', '.webp'];
+  const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.svg', '.webp', '.mp4', '.mov', '.avi', '.mkv', '.webm', '.3gp', '.m4v'];
   const ext = path.extname(file.originalname).toLowerCase();
   if (allowedExtensions.includes(ext)) {
     cb(null, true);
   } else {
-    cb(new Error('Only PDF and image files are allowed for installation proof'), false);
+    cb(new Error('Only image, video, and PDF files are allowed for installation proof'), false);
   }
 };
 
 export const uploadProofMiddleware = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: 100 * 1024 * 1024 }
 }).single('proof');
 
 const formatLeadWithIntegrations = (lead) => {
@@ -236,7 +236,7 @@ export const assignInstallationRep = async (req, res, next) => {
 // @access  Private (Admins and Installers only)
 export const updateInstallationStatus = async (req, res, next) => {
   try {
-    const { status, progressRemarks, clearIssue, resolveIssue } = req.body;
+    const { status, progressRemarks, clearIssue, resolveIssue, clearInTransitRemark } = req.body;
 
     if (!status || !['assigned', 'in_progress', 'in_transit', 'completed'].includes(status.toLowerCase())) {
       res.status(400);
@@ -266,6 +266,11 @@ export const updateInstallationStatus = async (req, res, next) => {
       if (normalizedStatus === 'in_transit') {
         lead.inTransitRemarks = progressRemarks;
       }
+    }
+
+    // Clear in-transit remark if explicitly requested or if set to false/null
+    if (clearInTransitRemark) {
+      lead.inTransitRemarks = null;
     }
 
     // Clear active issue/delay if explicitly requested or setting to completed
@@ -448,3 +453,92 @@ export const resolveInstallationIssue = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Delete Installation Proof
+// @route   DELETE /api/v1/installation/leads/:id/proof
+// @access  Private (Admins and Installers only)
+// @access  Private (Admins and Installers only)
+export const deleteInstallationProof = async (req, res, next) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) {
+      res.status(404);
+      throw new Error('Lead not found');
+    }
+
+    const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('You do not have permission to modify this installation');
+    }
+
+    if (!lead.installationProofUrl) {
+      res.status(400);
+      throw new Error('No installation proof uploaded for this lead');
+    }
+
+    // Attempt deleting physical file if stored locally
+    if (lead.installationProofUrl.startsWith('/uploads/')) {
+      const filePath = path.join('public', lead.installationProofUrl);
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (unlinkErr) {
+          console.error('Failed to delete physical proof file:', unlinkErr.message);
+        }
+      }
+    }
+
+    lead.installationProofUrl = null;
+    lead.remarks.push({
+      note: `[Installation Team] Deleted installation proof file`,
+      addedBy: req.user._id
+    });
+
+    const updatedLead = await lead.save();
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Installation proof deleted successfully',
+      data: { lead: formatLeadWithIntegrations(updatedLead) }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Clear / Remove In-Transit Remark
+// @route   PUT /api/v1/installation/leads/:id/clear-transit-remark
+// @access  Private (Admins and Installers only)
+export const clearInTransitRemark = async (req, res, next) => {
+  try {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) {
+      res.status(404);
+      throw new Error('Lead not found');
+    }
+
+    const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('You do not have permission to modify this installation');
+    }
+
+    lead.inTransitRemarks = null;
+    lead.remarks.push({
+      note: '[Installation Team] In-Transit remark cleared/removed',
+      addedBy: req.user._id
+    });
+
+    const updatedLead = await lead.save();
+
+    res.status(200).json({
+      status: 'success',
+      message: 'In-Transit remark removed successfully',
+      data: { lead: formatLeadWithIntegrations(updatedLead) }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
