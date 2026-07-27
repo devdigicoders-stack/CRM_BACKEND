@@ -10,6 +10,7 @@ import * as notificationController from '../controllers/notificationController.j
 import * as reportController from '../controllers/reportController.js';
 import * as accountsController from '../controllers/accountsController.js';
 import * as installationController from '../controllers/installationController.js';
+import * as branchController from '../controllers/branchController.js';
 import { protect, restrictTo, checkPermission } from '../middlewares/authMiddleware.js';
 
 export const apiRouter = Router();
@@ -92,6 +93,15 @@ apiRouter.put('/accounts/leads/:id/payment', protect, restrictTo('superAdmin', '
 apiRouter.put('/accounts/leads/:id/tracking', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.updateTrackingId);
 apiRouter.put('/accounts/leads/:id/transfer', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.transferToInstallation);
 
+
+// --- Branch Routes ---
+apiRouter.post('/branches', protect, restrictTo('superAdmin'), branchController.createBranch);
+apiRouter.get('/branches/available-users', protect, restrictTo('superAdmin'), branchController.getAvailableUsers);
+apiRouter.get('/branches', protect, restrictTo('superAdmin', 'admin'), branchController.getBranches);
+apiRouter.get('/branches/:id', protect, restrictTo('superAdmin', 'admin'), branchController.getBranchById);
+apiRouter.put('/branches/:id', protect, restrictTo('superAdmin'), branchController.updateBranch);
+apiRouter.delete('/branches/:id', protect, restrictTo('superAdmin'), branchController.deleteBranch);
+apiRouter.get('/branches/:id/dashboard', protect, restrictTo('superAdmin', 'admin'), branchController.getBranchDashboard);
 
 // --- Installation (Installation Panel) Routes ---
 apiRouter.get('/installation/dashboard', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.getInstallationDashboard);
