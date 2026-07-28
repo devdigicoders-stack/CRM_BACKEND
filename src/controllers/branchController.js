@@ -221,10 +221,7 @@ export const getBranchDashboard = async (req, res, next) => {
     const userIds = branch.assignedUsers.map((u) => u._id);
 
     const leads = await Lead.find({
-      $or: [
-        { assignedTo: { $in: userIds } },
-        { createdBy: { $in: userIds } },
-      ],
+      assignedTo: { $in: userIds },
     })
       .populate('assignedTo', 'name email role')
       .sort({ updatedAt: -1 })
