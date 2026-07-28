@@ -23,8 +23,13 @@ const adminSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['superAdmin', 'admin'],
+      enum: ['superAdmin', 'admin', 'branchManager'],
       default: 'admin',
+    },
+    branchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Branch',
+      default: null,
     },
     phone: {
       type: String,

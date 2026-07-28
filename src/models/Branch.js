@@ -13,8 +13,8 @@ const branchSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
-    // The admin who manages this branch (must be role: 'admin')
-    branchAdmin: {
+    // Branch manager — stored as ref to Admin (role: branchManager)
+    branchManager: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Admin',
       default: null,

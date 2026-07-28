@@ -3,41 +3,77 @@ import { Admin } from '../models/Admin.js';
 import { User } from '../models/User.js';
 import { Lead } from '../models/Lead.js';
 
-// @desc   Create a new branch
+const populateBranch = (query) =>
+  query
+    .populate('branchManager', 'name email phone role active')
+    .populate('assignedUsers', 'name email role phone active')
+    .populate('createdBy', 'name email');
+
+// @desc   Create a new branch + branch manager account
 // @route  POST /api/v1/branches
 // @access superAdmin only
+// Body: { name, description, managerName, managerEmail, managerPassword, managerPhone, assignedUsers }
 export const createBranch = async (req, res, next) => {
   try {
-    const { name, description, branchAdmin, assignedUsers } = req.body;
+    const { name, description, managerName, managerEmail, managerPassword, managerPhone, assignedUsers } = req.body;
 
     if (!name) {
       res.status(400);
       throw new Error('Branch name is required');
     }
 
-    // Validate branchAdmin if provided
-    if (branchAdmin) {
-      const adminDoc = await Admin.findById(branchAdmin);
-      if (!adminDoc || adminDoc.role !== 'admin') {
-        res.status(400);
-        throw new Error('branchAdmin must be a valid admin user');
-      }
+    if (!managerName || !managerEmail || !managerPassword) {
+      res.status(400);
+      throw new Error('Branch manager name, email and password are required');
     }
 
-    const branch = await Branch.create({
-      name,
-      description,
-      branchAdmin: branchAdmin || null,
-      assignedUsers: assignedUsers || [],
-      createdBy: req.user._id,
+    // Check email not already taken
+    const emailTakenAdmin = await Admin.findOne({ email: managerEmail });
+    const emailTakenUser = await User.findOne({ email: managerEmail });
+    if (emailTakenAdmin || emailTakenUser) {
+      res.status(400);
+      throw new Error('Email is already taken by another account');
+    }
+
+    // Create manager first, then branch — if branch fails, delete manager (manual rollback)
+    const manager = await Admin.create({
+      name: managerName,
+      email: managerEmail,
+      password: managerPassword,
+      phone: managerPhone || '',
+      role: 'branchManager',
     });
 
-    const populated = await Branch.findById(branch._id)
-      .populate('branchAdmin', 'name email role')
-      .populate('assignedUsers', 'name email role phone active')
-      .populate('createdBy', 'name email');
+    let branch;
+    try {
+      branch = await Branch.create({
+        name,
+        description,
+        branchManager: manager._id,
+        assignedUsers: assignedUsers || [],
+        createdBy: req.user._id,
+      });
+    } catch (branchErr) {
+      // Rollback: delete manager if branch creation failed
+      await Admin.findByIdAndDelete(manager._id);
+      throw branchErr;
+    }
 
-    res.status(201).json({ status: 'success', data: { branch: populated } });
+    // Link branchId back to manager
+    await Admin.findByIdAndUpdate(manager._id, { branchId: branch._id });
+
+    const populated = await populateBranch(Branch.findById(branch._id));
+
+    res.status(201).json({
+      status: 'success',
+      data: {
+        branch: populated,
+        managerCredentials: {
+          email: managerEmail,
+          password: managerPassword,
+        },
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -45,21 +81,16 @@ export const createBranch = async (req, res, next) => {
 
 // @desc   Get all branches
 // @route  GET /api/v1/branches
-// @access superAdmin — all; branchAdmin — only their own
+// @access superAdmin — all; branchManager — only their own
 export const getBranches = async (req, res, next) => {
   try {
     let query = {};
 
-    if (req.user.role === 'admin') {
-      // branchAdmin sees only their branch
-      query = { branchAdmin: req.user._id };
+    if (req.user.role === 'branchManager') {
+      query = { branchManager: req.user._id };
     }
 
-    const branches = await Branch.find(query)
-      .populate('branchAdmin', 'name email role')
-      .populate('assignedUsers', 'name email role phone active')
-      .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 });
+    const branches = await populateBranch(Branch.find(query).sort({ createdAt: -1 }));
 
     res.status(200).json({ status: 'success', data: { branches } });
   } catch (error) {
@@ -69,23 +100,19 @@ export const getBranches = async (req, res, next) => {
 
 // @desc   Get single branch
 // @route  GET /api/v1/branches/:id
-// @access superAdmin or that branch's admin
+// @access superAdmin or that branch's manager
 export const getBranchById = async (req, res, next) => {
   try {
-    const branch = await Branch.findById(req.params.id)
-      .populate('branchAdmin', 'name email role')
-      .populate('assignedUsers', 'name email role phone active')
-      .populate('createdBy', 'name email');
+    const branch = await populateBranch(Branch.findById(req.params.id));
 
     if (!branch) {
       res.status(404);
       throw new Error('Branch not found');
     }
 
-    // branchAdmin can only see their own branch
     if (
-      req.user.role === 'admin' &&
-      branch.branchAdmin?._id?.toString() !== req.user._id.toString()
+      req.user.role === 'branchManager' &&
+      branch.branchManager?._id?.toString() !== req.user._id.toString()
     ) {
       res.status(403);
       throw new Error('Access denied');
@@ -97,28 +124,18 @@ export const getBranchById = async (req, res, next) => {
   }
 };
 
-// @desc   Update branch (name, description, branchAdmin, assignedUsers)
+// @desc   Update branch (name, description, assignedUsers, active)
+//         Also can update manager credentials
 // @route  PUT /api/v1/branches/:id
 // @access superAdmin only
 export const updateBranch = async (req, res, next) => {
   try {
-    const { name, description, branchAdmin, assignedUsers, active } = req.body;
+    const { name, description, assignedUsers, active, managerName, managerEmail, managerPhone, managerPassword } = req.body;
 
     const branch = await Branch.findById(req.params.id);
     if (!branch) {
       res.status(404);
       throw new Error('Branch not found');
-    }
-
-    if (branchAdmin !== undefined) {
-      if (branchAdmin) {
-        const adminDoc = await Admin.findById(branchAdmin);
-        if (!adminDoc || adminDoc.role !== 'admin') {
-          res.status(400);
-          throw new Error('branchAdmin must be a valid admin user');
-        }
-      }
-      branch.branchAdmin = branchAdmin || null;
     }
 
     if (name) branch.name = name;
@@ -128,10 +145,27 @@ export const updateBranch = async (req, res, next) => {
 
     await branch.save();
 
-    const populated = await Branch.findById(branch._id)
-      .populate('branchAdmin', 'name email role')
-      .populate('assignedUsers', 'name email role phone active')
-      .populate('createdBy', 'name email');
+    // Update manager details if provided
+    if (branch.branchManager && (managerName || managerEmail || managerPhone || managerPassword)) {
+      const manager = await Admin.findById(branch.branchManager).select('+password');
+      if (manager) {
+        if (managerName) manager.name = managerName;
+        if (managerPhone) manager.phone = managerPhone;
+        if (managerPassword) manager.password = managerPassword;
+        if (managerEmail && managerEmail !== manager.email) {
+          const taken = await Admin.findOne({ email: managerEmail });
+          const takenUser = await User.findOne({ email: managerEmail });
+          if (taken || takenUser) {
+            res.status(400);
+            throw new Error('Email is already taken by another account');
+          }
+          manager.email = managerEmail;
+        }
+        await manager.save();
+      }
+    }
+
+    const populated = await populateBranch(Branch.findById(branch._id));
 
     res.status(200).json({ status: 'success', data: { branch: populated } });
   } catch (error) {
@@ -139,7 +173,7 @@ export const updateBranch = async (req, res, next) => {
   }
 };
 
-// @desc   Delete branch
+// @desc   Delete branch (also deletes branch manager account)
 // @route  DELETE /api/v1/branches/:id
 // @access superAdmin only
 export const deleteBranch = async (req, res, next) => {
@@ -149,8 +183,14 @@ export const deleteBranch = async (req, res, next) => {
       res.status(404);
       throw new Error('Branch not found');
     }
+
+    // Delete the branch manager Admin account
+    if (branch.branchManager) {
+      await Admin.findByIdAndDelete(branch.branchManager);
+    }
+
     await branch.deleteOne();
-    res.status(200).json({ status: 'success', message: 'Branch deleted successfully' });
+    res.status(200).json({ status: 'success', message: 'Branch and branch manager deleted successfully' });
   } catch (error) {
     next(error);
   }
@@ -158,11 +198,11 @@ export const deleteBranch = async (req, res, next) => {
 
 // @desc   Get branch dashboard stats + leads + users
 // @route  GET /api/v1/branches/:id/dashboard
-// @access superAdmin or that branch's admin
+// @access superAdmin or that branch's manager
 export const getBranchDashboard = async (req, res, next) => {
   try {
     const branch = await Branch.findById(req.params.id)
-      .populate('branchAdmin', 'name email role')
+      .populate('branchManager', 'name email phone role active')
       .populate('assignedUsers', 'name email role phone active');
 
     if (!branch) {
@@ -171,8 +211,8 @@ export const getBranchDashboard = async (req, res, next) => {
     }
 
     if (
-      req.user.role === 'admin' &&
-      branch.branchAdmin?._id?.toString() !== req.user._id.toString()
+      req.user.role === 'branchManager' &&
+      branch.branchManager?._id?.toString() !== req.user._id.toString()
     ) {
       res.status(403);
       throw new Error('Access denied');
@@ -180,7 +220,6 @@ export const getBranchDashboard = async (req, res, next) => {
 
     const userIds = branch.assignedUsers.map((u) => u._id);
 
-    // Leads created by or assigned to branch users
     const leads = await Lead.find({
       $or: [
         { assignedTo: { $in: userIds } },
@@ -191,7 +230,6 @@ export const getBranchDashboard = async (req, res, next) => {
       .sort({ updatedAt: -1 })
       .lean();
 
-    // Stats
     const totalLeads = leads.length;
     const byStatus = {};
     const byPriority = {};
@@ -224,23 +262,20 @@ export const getBranchDashboard = async (req, res, next) => {
   }
 };
 
-// @desc   Get all users not yet assigned to any branch (for assignment dropdown)
+// @desc   Get all users available to assign to a branch
 // @route  GET /api/v1/branches/available-users
 // @access superAdmin only
 export const getAvailableUsers = async (req, res, next) => {
   try {
-    // Get all user IDs already in any branch
     const allBranches = await Branch.find({}).select('assignedUsers').lean();
     const assignedIds = allBranches.flatMap((b) => b.assignedUsers.map((id) => id.toString()));
 
     const users = await User.find({ active: true }).select('name email role phone').lean();
-    const admins = await Admin.find({ role: 'admin', active: true }).select('name email role').lean();
 
     res.status(200).json({
       status: 'success',
       data: {
         users,
-        admins,
         assignedUserIds: assignedIds,
       },
     });

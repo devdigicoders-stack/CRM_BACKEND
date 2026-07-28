@@ -97,9 +97,9 @@ apiRouter.put('/accounts/leads/:id/transfer', protect, restrictTo('superAdmin', 
 // --- Branch Routes ---
 apiRouter.post('/branches', protect, restrictTo('superAdmin'), branchController.createBranch);
 apiRouter.get('/branches/available-users', protect, restrictTo('superAdmin'), branchController.getAvailableUsers);
-apiRouter.get('/branches/:id/dashboard', protect, restrictTo('superAdmin', 'admin'), branchController.getBranchDashboard);
-apiRouter.get('/branches', protect, restrictTo('superAdmin', 'admin'), branchController.getBranches);
-apiRouter.get('/branches/:id', protect, restrictTo('superAdmin', 'admin'), branchController.getBranchById);
+apiRouter.get('/branches/:id/dashboard', protect, restrictTo('superAdmin', 'branchManager'), branchController.getBranchDashboard);
+apiRouter.get('/branches', protect, restrictTo('superAdmin', 'branchManager'), branchController.getBranches);
+apiRouter.get('/branches/:id', protect, restrictTo('superAdmin', 'branchManager'), branchController.getBranchById);
 apiRouter.put('/branches/:id', protect, restrictTo('superAdmin'), branchController.updateBranch);
 apiRouter.delete('/branches/:id', protect, restrictTo('superAdmin'), branchController.deleteBranch);
 

@@ -61,22 +61,11 @@ export const checkPermission = (panel) => {
       return next(new Error('User object not found on request'));
     }
 
-    // superAdmin has access to everything
-    if (req.user.role === 'superAdmin') return next();
+    // superAdmin, admin, branchManager — full access
+    if (['superAdmin', 'admin', 'branchManager'].includes(req.user.role)) return next();
 
-    // admin has access to everything
-    if (req.user.role === 'admin') return next();
-
-    // Non-admin roles (sales, calling, accountant, installation, etc.) pass freely
-    if (req.user.role !== 'admin') return next();
-
-    // Admin must have the specific panel permission
-    if (!req.user.permissions || !req.user.permissions.includes(panel)) {
-      res.status(403);
-      return next(new Error(`Access denied. You do not have permission for the '${panel}' panel. Contact Super Admin to grant access.`));
-    }
-
-    next();
+    // sales, calling, accountant, installation, crmuser — pass freely (no panel restriction)
+    return next();
   };
 };
 

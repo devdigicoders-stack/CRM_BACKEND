@@ -50,12 +50,12 @@ export const register = async (req, res, next) => {
     const targetRole = role === 'sales_rep' ? 'sales' : (role || 'sales');
 
     // 1) Verify role exists in valid sets
-    const isAdminRole = ['superAdmin', 'admin'].includes(targetRole);
+    const isAdminRole = ['superAdmin', 'admin', 'branchManager'].includes(targetRole);
     const isUserRole = ['accountant', 'sales', 'calling', 'installation', 'crmuser'].includes(targetRole);
 
     if (!isAdminRole && !isUserRole) {
       res.status(400);
-      throw new Error(`Invalid role. Allowed roles: admin, superAdmin, accountant, sales (or sales_rep), calling, installation, crmuser`);
+      throw new Error(`Invalid role. Allowed roles: admin, superAdmin, branchManager, accountant, sales (or sales_rep), calling, installation, crmuser`);
     }
 
     // 2) Check if email is already taken in either collection
@@ -223,7 +223,7 @@ export const saveFcmToken = async (req, res, next) => {
       throw new Error('Please provide fcmToken');
     }
 
-    const isAdmin = ['superAdmin', 'admin'].includes(req.user.role);
+    const isAdmin = ['superAdmin', 'admin', 'branchManager'].includes(req.user.role);
     const Model = isAdmin ? Admin : User;
 
     await Model.findByIdAndUpdate(req.user._id, { fcmToken });
@@ -242,7 +242,7 @@ export const updateProfile = async (req, res, next) => {
     const { name, email, phone } = req.body;
     const userId = req.user._id;
 
-    const isAdmin = ['superAdmin', 'admin'].includes(req.user.role);
+    const isAdmin = ['superAdmin', 'admin', 'branchManager'].includes(req.user.role);
     const Model = isAdmin ? Admin : User;
 
     const user = await Model.findById(userId);
