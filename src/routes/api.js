@@ -51,7 +51,7 @@ apiRouter.put('/leads/:id/delivery', protect, checkPermission('leads'), leadCont
 apiRouter.get('/dashboard/stats', protect, checkPermission('dashboard'), dashboardController.getDashboardStats);
 apiRouter.get('/dashboard/reminders/today', protect, checkPermission('dashboard'), dashboardController.getTodayReminders);
 apiRouter.get('/dashboard/reminders/missed', protect, checkPermission('dashboard'), dashboardController.getMissedFollowUps);
-apiRouter.get('/dashboard/performance', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('dashboard'), dashboardController.getPerformanceAnalytics);
+apiRouter.get('/dashboard/performance', protect, restrictTo('superAdmin', 'admin', 'manager', 'branchManager'), checkPermission('dashboard'), dashboardController.getPerformanceAnalytics);
 apiRouter.get('/dashboard/report', protect, checkPermission('dashboard'), dashboardController.getLeadAssignmentReport);
 // --- Settings Routes ---
 apiRouter.get('/settings', protect, settingsController.getSettings);
