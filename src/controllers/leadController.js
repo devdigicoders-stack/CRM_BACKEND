@@ -194,6 +194,22 @@ export const getLeads = async (req, res, next) => {
           query.assignedTo = assignedTo;
         }
       }
+    } else if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      if (assignedTo) {
+        if (assignedTo === 'unassigned') {
+          query.assignedTo = { $eq: null };
+        } else {
+          const isBranchUser = branchUserIds.some(id => id.toString() === assignedTo);
+          query.assignedTo = isBranchUser ? assignedTo : { $in: [] };
+        }
+      } else {
+        query.$or = [
+          { assignedTo: { $in: branchUserIds } },
+          { createdBy: { $in: branchUserIds } }
+        ];
+      }
     } else if (req.user.role === 'crmuser') {
       // crmuser can see leads they created OR leads assigned to them
       query.$or = [

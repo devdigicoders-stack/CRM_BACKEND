@@ -58,15 +58,15 @@ apiRouter.get('/settings', protect, settingsController.getSettings);
 apiRouter.put('/settings', protect, restrictTo('superAdmin', 'admin', 'sales'), settingsController.updateSettings);
 
 // --- User Management Routes ---
-apiRouter.post('/users', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.createUser);
+apiRouter.post('/users', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('users'), userController.createUser);
 apiRouter.get('/users/installers', protect, restrictTo('superAdmin', 'admin', 'accountant'), userController.getInstallers);
-apiRouter.get('/users/tracking/summary', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.getUsersTrackingSummary);
-apiRouter.get('/users/:id/history', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.getUserHistory);
-apiRouter.get('/users', protect, restrictTo('superAdmin', 'admin','accountant', 'crmuser', 'sales'), checkPermission('users'), userController.getUsers);
-apiRouter.get('/users/:id', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.getUserById);
-apiRouter.put('/users/:id', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.updateUser);
+apiRouter.get('/users/tracking/summary', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('users'), userController.getUsersTrackingSummary);
+apiRouter.get('/users/:id/history', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('users'), userController.getUserHistory);
+apiRouter.get('/users', protect, restrictTo('superAdmin', 'admin', 'accountant', 'crmuser', 'sales', 'branchManager'), checkPermission('users'), userController.getUsers);
+apiRouter.get('/users/:id', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('users'), userController.getUserById);
+apiRouter.put('/users/:id', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('users'), userController.updateUser);
 apiRouter.put('/users/:id/password', protect, restrictTo('superAdmin'), userController.updateUserPassword);
-apiRouter.put('/users/:id/toggle-status', protect, restrictTo('superAdmin', 'admin'), checkPermission('users'), userController.toggleUserStatus);
+apiRouter.put('/users/:id/toggle-status', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('users'), userController.toggleUserStatus);
 apiRouter.put('/users/:id/permissions', protect, restrictTo('superAdmin'), userController.updateUserPermissions);
 apiRouter.delete('/users/:id', protect, restrictTo('superAdmin'), userController.deleteUser);
 
@@ -79,10 +79,10 @@ apiRouter.get('/notifications', protect, notificationController.getNotifications
 apiRouter.put('/notifications/:id/read', protect, notificationController.markAsRead);
 
 // --- Report Routes ---
-apiRouter.get('/reports/analytics', protect, restrictTo('superAdmin', 'admin', 'manager', 'sales'), checkPermission('reports'), reportController.getComprehensiveReport);
-apiRouter.get('/reports/kpi-details', protect, restrictTo('superAdmin', 'admin', 'manager', 'sales'), checkPermission('reports'), reportController.getKpiDetails);
-apiRouter.get('/reports/export/excel', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('reports'), reportController.exportLeadsExcel);
-apiRouter.get('/reports/export/pdf', protect, restrictTo('superAdmin', 'admin', 'manager'), checkPermission('reports'), reportController.exportLeadsPdf);
+apiRouter.get('/reports/analytics', protect, restrictTo('superAdmin', 'admin', 'manager', 'sales', 'branchManager'), checkPermission('reports'), reportController.getComprehensiveReport);
+apiRouter.get('/reports/kpi-details', protect, restrictTo('superAdmin', 'admin', 'manager', 'sales', 'branchManager'), checkPermission('reports'), reportController.getKpiDetails);
+apiRouter.get('/reports/export/excel', protect, restrictTo('superAdmin', 'admin', 'manager', 'branchManager'), checkPermission('reports'), reportController.exportLeadsExcel);
+apiRouter.get('/reports/export/pdf', protect, restrictTo('superAdmin', 'admin', 'manager', 'branchManager'), checkPermission('reports'), reportController.exportLeadsPdf);
 
 // --- Accounts (Accountant Panel) Routes ---
 apiRouter.get('/accounts/dashboard', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.getAccountDashboard);

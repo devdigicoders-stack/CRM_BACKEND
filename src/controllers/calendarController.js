@@ -13,25 +13,38 @@ export const getCalendarLeads = async (req, res, next) => {
     }
 
     const query = {
-      $or: [
+      $and: [
         {
-          followUpDate: {
-            $gte: new Date(startDate),
-            $lte: new Date(endDate),
-          }
-        },
-        {
-          'remarks.followUpDate': {
-            $gte: new Date(startDate),
-            $lte: new Date(endDate),
-          }
+          $or: [
+            {
+              followUpDate: {
+                $gte: new Date(startDate),
+                $lte: new Date(endDate),
+              }
+            },
+            {
+              'remarks.followUpDate': {
+                $gte: new Date(startDate),
+                $lte: new Date(endDate),
+              }
+            }
+          ]
         }
       ]
     };
 
-    // Access control: Staff members can only view their own followups
-    if (!['superAdmin', 'admin'].includes(req.user.role)) {
-      query.assignedTo = req.user._id;
+    // Access control
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      query.$and.push({
+        $or: [
+          { assignedTo: { $in: branchUserIds } },
+          { createdBy: { $in: branchUserIds } }
+        ]
+      });
+    } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
+      query.$and.push({ assignedTo: req.user._id });
     }
 
     const leads = await Lead.find(query)
@@ -120,7 +133,14 @@ export const getVisitsCalendar = async (req, res, next) => {
     };
 
     // Access control: Staff members can only view their own visits
-    if (!['superAdmin', 'admin'].includes(req.user.role)) {
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      query.$or = [
+        { assignedTo: { $in: branchUserIds } },
+        { createdBy: { $in: branchUserIds } }
+      ];
+    } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
 

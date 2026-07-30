@@ -3,12 +3,24 @@ import PDFDocument from 'pdfkit';
 import { Lead } from '../models/Lead.js';
 
 // Helper to compile filters based on query params
-const getFilterQuery = (req) => {
+const getFilterQuery = async (req) => {
   const { search, status, priority, tag, assignedTo, followUpDate, startDate, endDate } = req.query;
   const query = {};
 
   if (req.user.role === 'sales') {
     query.assignedTo = req.user.id;
+  } else if (req.user.role === 'branchManager') {
+    const { getBranchUserIds } = await import('../utils/branchHelper.js');
+    const branchUserIds = await getBranchUserIds(req.user._id);
+    if (assignedTo) {
+      const isBranchUser = branchUserIds.some(id => id.toString() === assignedTo);
+      query.assignedTo = isBranchUser ? assignedTo : { $in: [] };
+    } else {
+      query.$or = [
+        { assignedTo: { $in: branchUserIds } },
+        { createdBy: { $in: branchUserIds } }
+      ];
+    }
   } else if (assignedTo) {
     query.assignedTo = assignedTo;
   }
@@ -55,7 +67,7 @@ const getFilterQuery = (req) => {
 // @access  Private (Super Admin, Admin, and Manager only)
 export const exportLeadsExcel = async (req, res, next) => {
   try {
-    const query = getFilterQuery(req);
+    const query = await getFilterQuery(req);
 
     // Fetch leads without pagination using lean query
     const leads = await Lead.find(query)
@@ -105,7 +117,7 @@ export const exportLeadsExcel = async (req, res, next) => {
 // @access  Private (Super Admin, Admin, and Manager only)
 export const exportLeadsPdf = async (req, res, next) => {
   try {
-    const query = getFilterQuery(req);
+    const query = await getFilterQuery(req);
 
     const leads = await Lead.find(query)
       .populate('assignedTo', 'name')
@@ -323,7 +335,7 @@ const formatAnalyticsResult = (result) => {
 // @access  Private (Super Admin, Admin, and Manager only)
 export const getComprehensiveReport = async (req, res, next) => {
   try {
-    const baseQuery = getFilterQuery(req);
+    const baseQuery = await getFilterQuery(req);
     // Remove the date filter if any so we can explicitly handle the date ranges
     const customCreatedAt = baseQuery.createdAt;
     delete baseQuery.createdAt;
@@ -424,7 +436,7 @@ export const getKpiDetails = async (req, res, next) => {
     }
 
     // Use base filter for access control
-    const baseQuery = getFilterQuery(req);
+    const baseQuery = await getFilterQuery(req);
     delete baseQuery.createdAt;
     delete baseQuery.followUpDate;
 

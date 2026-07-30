@@ -49,6 +49,15 @@ export const createUser = async (req, res, next) => {
       newUser = await User.create({ name, email, password, role: targetRole, phone });
     }
 
+    // Automatically link to branch if manager is creating staff
+    if (req.user.role === 'branchManager' && !isAdminRole) {
+      const { Branch } = await import('../models/Branch.js');
+      await Branch.findOneAndUpdate(
+        { branchManager: req.user._id },
+        { $addToSet: { assignedUsers: newUser._id } }
+      );
+    }
+
     res.status(201).json({
       status: 'success',
       data: {
@@ -65,7 +74,13 @@ export const createUser = async (req, res, next) => {
 // @access  Private (all logged in users)
 export const getSalesUsers = async (req, res, next) => {
   try {
-    const users = await User.find({ role: 'sales', active: true })
+    const query = { role: 'sales', active: true };
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      query._id = { $in: branchUserIds };
+    }
+    const users = await User.find(query)
       .select('name email phone role')
       .sort({ name: 1 })
       .lean();
@@ -103,6 +118,16 @@ export const getInstallers = async (req, res, next) => {
 // @access  Private (Super Admin and Admin only)
 export const getUserById = async (req, res, next) => {
   try {
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      const isBranchUser = branchUserIds.some(id => id.toString() === req.params.id);
+      if (!isBranchUser) {
+        res.status(403);
+        throw new Error('Access denied to this user');
+      }
+    }
+
     let user = await Admin.findById(req.params.id).lean();
     if (!user) user = await User.findById(req.params.id).lean();
 
@@ -128,6 +153,12 @@ export const getUsers = async (req, res, next) => {
     const { search, role, active, page = 1, limit = 10 } = req.query;
 
     const query = {};
+
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      query._id = { $in: branchUserIds };
+    }
 
     // Apply active status filtering
     if (active !== undefined) {
@@ -194,6 +225,16 @@ export const getUsers = async (req, res, next) => {
 export const updateUser = async (req, res, next) => {
   try {
     const { name, email, role, phone, permissions, password } = req.body;
+
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      const isBranchUser = branchUserIds.some(id => id.toString() === req.params.id);
+      if (!isBranchUser) {
+        res.status(403);
+        throw new Error('Access denied to modify this user');
+      }
+    }
 
     // Search in Admins first
     let userToUpdate = await Admin.findById(req.params.id);
@@ -401,6 +442,16 @@ export const deleteUser = async (req, res, next) => {
 // @access  Private (Super Admin and Admin only)
 export const toggleUserStatus = async (req, res, next) => {
   try {
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      const isBranchUser = branchUserIds.some(id => id.toString() === req.params.id);
+      if (!isBranchUser) {
+        res.status(403);
+        throw new Error('Access denied to modify this user');
+      }
+    }
+
     let userToToggle = await Admin.findById(req.params.id);
 
     if (!userToToggle) {
@@ -470,6 +521,16 @@ export const getUserHistory = async (req, res, next) => {
   try {
     const userId = req.params.id;
     const { startDate, endDate } = req.query;
+
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      const isBranchUser = branchUserIds.some(id => id.toString() === userId);
+      if (!isBranchUser) {
+        res.status(403);
+        throw new Error('Access denied to view this user history');
+      }
+    }
 
     let dateFilter = {};
     if (startDate && endDate) {
@@ -612,8 +673,16 @@ export const getUsersTrackingSummary = async (req, res, next) => {
     }
 
     // 1) Fetch all users and admins
-    const users = await User.find({}).select('name email role phone active profilePic').lean();
-    const admins = await Admin.find({}).select('name email role phone active profilePic').lean();
+    let users = await User.find({}).select('name email role phone active profilePic').lean();
+    let admins = await Admin.find({}).select('name email role phone active profilePic').lean();
+    
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id).then(ids => ids.map(id => id.toString()));
+      users = users.filter(u => branchUserIds.includes(u._id.toString()));
+      admins = admins.filter(a => branchUserIds.includes(a._id.toString()));
+    }
+    
     const allUsers = [...admins, ...users];
 
     // 2) Get lead stats breakdown grouped by assignedTo

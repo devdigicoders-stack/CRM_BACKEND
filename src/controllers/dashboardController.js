@@ -25,11 +25,18 @@ export const getDashboardStats = async (req, res, next) => {
     // If staff user, restrict metrics to their own leads
     if (req.user.role === 'crmuser') {
       query.$or = [{ createdBy: req.user._id }, { assignedTo: req.user._id }];
+    } else if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      query.$or = [
+        { assignedTo: { $in: branchUserIds } },
+        { createdBy: { $in: branchUserIds } }
+      ];
     } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
 
-    const isAdmin = ['superAdmin', 'admin'].includes(req.user.role);
+    const isAdmin = ['superAdmin', 'admin', 'branchManager'].includes(req.user.role);
 
     // Dates for today
     const now = new Date();
@@ -179,6 +186,13 @@ export const getTodayReminders = async (req, res, next) => {
 
     if (req.user.role === 'crmuser') {
       query.$or = [{ createdBy: req.user._id }, { assignedTo: req.user._id }];
+    } else if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      query.$or = [
+        { assignedTo: { $in: branchUserIds } },
+        { createdBy: { $in: branchUserIds } }
+      ];
     } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
@@ -225,6 +239,13 @@ export const getMissedFollowUps = async (req, res, next) => {
 
     if (req.user.role === 'crmuser') {
       query.$or = [{ createdBy: req.user._id }, { assignedTo: req.user._id }];
+    } else if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      query.$or = [
+        { assignedTo: { $in: branchUserIds } },
+        { createdBy: { $in: branchUserIds } }
+      ];
     } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
@@ -261,6 +282,11 @@ export const getPerformanceAnalytics = async (req, res, next) => {
     startOfToday.setHours(0, 0, 0, 0);
 
     const matchStage = {};
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      matchStage.assignedTo = { $in: branchUserIds };
+    }
     if (req.query.startDate && req.query.endDate) {
       const endOfDay = new Date(req.query.endDate);
       endOfDay.setHours(23, 59, 59, 999);
@@ -414,6 +440,13 @@ export const getLeadAssignmentReport = async (req, res, next) => {
 
     if (req.user.role === 'crmuser') {
       query.$or = [{ createdBy: req.user._id }, { assignedTo: req.user._id }];
+    } else if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      query.$or = [
+        { assignedTo: { $in: branchUserIds } },
+        { createdBy: { $in: branchUserIds } }
+      ];
     } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
