@@ -109,8 +109,8 @@ export const getDashboardStats = async (req, res, next) => {
       if (item._id) statsByPriority[item._id] = item.count;
     });
 
-    // Lead Flow Monitoring (Calling Team vs Sales Panel vs Unassigned)
-    let leadFlow = { callingTeam: 0, salesPanel: 0, unassigned: 0 };
+    // Lead Flow Monitoring (Calling Team vs Sales Panel vs Branch/Admin vs Unassigned)
+    let leadFlow = { callingTeam: 0, salesPanel: 0, branchTeam: 0, unassigned: 0 };
     
     const flowData = await Lead.aggregate([
       { $match: query },
@@ -119,7 +119,23 @@ export const getDashboardStats = async (req, res, next) => {
           from: 'users',
           localField: 'assignedTo',
           foreignField: '_id',
-          as: 'assignee'
+          as: 'assigneeUser'
+        }
+      },
+      {
+        $lookup: {
+          from: 'admins',
+          localField: 'assignedTo',
+          foreignField: '_id',
+          as: 'assigneeAdmin'
+        }
+      },
+      {
+        $project: {
+          assignedTo: 1,
+          assignee: {
+            $concatArrays: ['$assigneeUser', '$assigneeAdmin']
+          }
         }
       },
       {
@@ -132,7 +148,7 @@ export const getDashboardStats = async (req, res, next) => {
         $group: {
           _id: {
             $cond: {
-              if: { $ifNull: ['$assignee', false] },
+              if: { $and: [{ $ifNull: ['$assignedTo', false] }, { $ne: ['$assignedTo', ''] }, { $ifNull: ['$assignee', false] }] },
               then: '$assignee.role',
               else: 'unassigned'
             }
@@ -147,7 +163,9 @@ export const getDashboardStats = async (req, res, next) => {
         leadFlow.callingTeam += item.count;
       } else if (item._id === 'sales') {
         leadFlow.salesPanel += item.count;
-      } else if (item._id === 'unassigned') {
+      } else if (['branchManager', 'admin', 'superAdmin', 'branch'].includes(item._id)) {
+        leadFlow.branchTeam += item.count;
+      } else {
         leadFlow.unassigned += item.count;
       }
     });
