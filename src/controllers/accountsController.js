@@ -58,12 +58,12 @@ const statsKeyExists = (key, obj) => Object.prototype.hasOwnProperty.call(obj, k
 
 export const getAccountDashboard = async (req, res, next) => {
   try {
-    const totalClosedWon = await Lead.countDocuments({ transferredToAccounts: true });
-    const pendingVerification = await Lead.countDocuments({ transferredToAccounts: true, verificationStatus: 'pending' });
-    const verifiedSales = await Lead.countDocuments({ transferredToAccounts: true, verificationStatus: 'verified' });
+    const totalClosedWon = await Lead.countDocuments({ transferredToAccounts: true, status: { $in: ['converted', 'closed'] } });
+    const pendingVerification = await Lead.countDocuments({ transferredToAccounts: true, status: { $in: ['converted', 'closed'] }, verificationStatus: 'pending' });
+    const verifiedSales = await Lead.countDocuments({ transferredToAccounts: true, status: { $in: ['converted', 'closed'] }, verificationStatus: 'verified' });
     const rejectedSales = await Lead.countDocuments({ verificationStatus: 'rejected' });
     const paymentStatusBreakdown = await Lead.aggregate([
-      { $match: { transferredToAccounts: true } },
+      { $match: { transferredToAccounts: true, status: { $in: ['converted', 'closed'] } } },
       { $group: { _id: '$paymentStatus', count: { $sum: 1 } } }
     ]);
     const paymentStats = { pending: 0, partial: 0, completed: 0 };
@@ -86,6 +86,7 @@ export const getClosedWonLeads = async (req, res, next) => {
       query.verificationStatus = 'rejected';
     } else {
       query.transferredToAccounts = true;
+      query.status = { $in: ['converted', 'closed'] };
       if (verificationStatus) query.verificationStatus = verificationStatus;
     }
 

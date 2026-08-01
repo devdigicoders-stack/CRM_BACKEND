@@ -423,6 +423,8 @@ export const updateLead = async (req, res, next) => {
         for (const acc of accountants) {
           sendNotification(acc._id, '💰 New Sale Confirmed (Auto)', `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko auto-transfer ho gayi by ${req.user.name}`, lead._id).catch(err => console.error(err));
         }
+      } else if (!['converted', 'closed'].includes(status)) {
+        lead.transferredToAccounts = false;
       }
       if (['converted', 'closed', 'not_interested'].includes(status)) {
         lead.followUpDate = null;
@@ -592,6 +594,8 @@ export const addRemark = async (req, res, next) => {
         for (const acc of accountants) {
           sendNotification(acc._id, '💰 New Sale Confirmed (Auto)', `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko auto-transfer ho gayi by ${req.user.name}`, lead._id).catch(err => console.error(err));
         }
+      } else if (!['converted', 'closed'].includes(status)) {
+        lead.transferredToAccounts = false;
       }
       if (['converted', 'closed', 'not_interested'].includes(status)) {
         lead.followUpDate = null;
