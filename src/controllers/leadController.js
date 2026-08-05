@@ -491,12 +491,17 @@ export const assignLead = async (req, res, next) => {
       throw new Error('Calling representatives can only assign leads to the Sales Panel representatives');
     }
 
+    // Check if this is a reassignment (already had an assignee)
+    const wasReassigned = !!lead.assignedTo && lead.assignedTo.toString() !== userId;
+    const previousAssigneeName = wasReassigned ? (await User.findById(lead.assignedTo).select('name').lean())?.name || 'Unknown' : null;
+
     // Update assignment
     lead.assignedTo = userId;
     lead.assignedToModel = assigneeModel;
     lead.assignedBy = req.user._id;
     lead.assignedByModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
     lead.status = 'assigned';
+    lead.isReassigned = wasReassigned;
 
     // If assigning to installation role, set installation fields too
     if (targetUser.role === 'installation') {
@@ -506,8 +511,11 @@ export const assignLead = async (req, res, next) => {
     }
 
     // Add audit remark
+    const remarkNote = wasReassigned
+      ? `[Reassignment] Lead reassigned from ${previousAssigneeName} to ${targetUser.name} (${targetUser.role}) by ${req.user.name}`
+      : `[Assignment] Lead assigned to ${targetUser.name} (${targetUser.role}) by ${req.user.name}`;
     lead.remarks.push({
-      note: `[Reassignment] Lead assigned to ${targetUser.name} (${targetUser.role}) by ${req.user.name}`,
+      note: remarkNote,
       addedBy: req.user._id
     });
 

@@ -234,6 +234,10 @@ const leadSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isReassigned: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
