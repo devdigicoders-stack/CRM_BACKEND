@@ -222,10 +222,7 @@ const generateAnalyticsPipeline = (baseQuery, dateFilter) => {
   const createMatch = dateFilter ? { ...baseQuery, createdAt: dateFilter } : baseQuery;
   const saleMatch = dateFilter ? {
     ...baseQuery,
-    $or: [
-      { saleConfirmedAt: dateFilter },
-      { saleConfirmedAt: { $exists: false }, updatedAt: dateFilter }
-    ]
+    saleConfirmedAt: dateFilter
   } : baseQuery;
   const installMatch = dateFilter ? { ...baseQuery, updatedAt: dateFilter } : baseQuery;
 
@@ -465,12 +462,7 @@ export const getKpiDetails = async (req, res, next) => {
           }
         ];
         if (dateFilter) {
-          query.$and.push({
-            $or: [
-              { saleConfirmedAt: dateFilter },
-              { saleConfirmedAt: { $exists: false }, updatedAt: dateFilter }
-            ]
-          });
+          query.saleConfirmedAt = dateFilter;
         }
         break;
       case 'totalInstallations':
