@@ -1,6 +1,7 @@
 import XLSX from 'xlsx';
 import PDFDocument from 'pdfkit';
 import { Lead } from '../models/Lead.js';
+import mongoose from 'mongoose';
 
 // Helper to compile filters based on query params
 const getFilterQuery = async (req) => {
@@ -8,21 +9,22 @@ const getFilterQuery = async (req) => {
   const query = {};
 
   if (req.user.role === 'sales') {
-    query.assignedTo = req.user.id;
+    query.assignedTo = new mongoose.Types.ObjectId(req.user.id);
   } else if (req.user.role === 'branchManager') {
     const { getBranchUserIds } = await import('../utils/branchHelper.js');
     const branchUserIds = await getBranchUserIds(req.user._id);
+    const branchUserObjectIds = branchUserIds.map(id => new mongoose.Types.ObjectId(id));
     if (assignedTo) {
       const isBranchUser = branchUserIds.some(id => id.toString() === assignedTo);
-      query.assignedTo = isBranchUser ? assignedTo : { $in: [] };
+      query.assignedTo = isBranchUser ? new mongoose.Types.ObjectId(assignedTo) : { $in: [] };
     } else {
       query.$or = [
-        { assignedTo: { $in: branchUserIds } },
-        { createdBy: { $in: branchUserIds } }
+        { assignedTo: { $in: branchUserObjectIds } },
+        { createdBy: { $in: branchUserObjectIds } }
       ];
     }
   } else if (assignedTo) {
-    query.assignedTo = assignedTo;
+    query.assignedTo = new mongoose.Types.ObjectId(assignedTo);
   }
 
   if (search) {
