@@ -150,8 +150,13 @@ apiRouter.post('/stock/products', protect, restrictTo('superAdmin', 'admin', 'st
 apiRouter.put('/stock/products/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.updateProduct);
 apiRouter.delete('/stock/products/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.deleteProduct);
 
+// Seed & Bulk Import
+apiRouter.post('/stock/seed', protect, stockController.seedStockMetadata);
+apiRouter.post('/stock/products/import-bulk', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.bulkImportProducts);
+
 // Stock Movements
 apiRouter.get('/stock/movements', protect, stockController.getStockMovements);
 apiRouter.post('/stock/movements', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.recordStockMovement);
+
 
 

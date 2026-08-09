@@ -6,6 +6,72 @@ import { Product } from '../models/Product.js';
 import { StockMovement } from '../models/StockMovement.js';
 import XLSX from 'xlsx';
 
+// --- Default Data Seeder ---
+export const seedStockMetadata = async (req, res, next) => {
+  try {
+    const catCount = await Category.countDocuments();
+    let seededCategories = [];
+    if (catCount === 0) {
+      seededCategories = await Category.insertMany([
+        { name: 'Electronics', code: 'CAT-ELE', description: 'Electronic items & gadgets', status: 'active' },
+        { name: 'Hardware & Tools', code: 'CAT-HDW', description: 'Hardware equipment and tools', status: 'active' },
+        { name: 'Home & Office Appliances', code: 'CAT-APP', description: 'Electrical appliances', status: 'active' },
+        { name: 'Raw Materials', code: 'CAT-RAW', description: 'Industrial raw materials', status: 'active' },
+        { name: 'Office Supplies', code: 'CAT-SUP', description: 'Consumables & stationery', status: 'active' },
+        { name: 'Spare Parts', code: 'CAT-SPR', description: 'Component spare parts', status: 'active' },
+      ]);
+    }
+
+    const brandCount = await Brand.countDocuments();
+    let seededBrands = [];
+    if (brandCount === 0) {
+      seededBrands = await Brand.insertMany([
+        { name: 'Samsung', code: 'BR-SAM', description: 'Samsung Electronics', status: 'active' },
+        { name: 'LG Electronics', code: 'BR-LGE', description: 'LG Electronics', status: 'active' },
+        { name: 'Bosch', code: 'BR-BSC', description: 'Bosch Tools & Technology', status: 'active' },
+        { name: 'Tata', code: 'BR-TAT', description: 'Tata Enterprise', status: 'active' },
+        { name: 'HP', code: 'BR-HPP', description: 'Hewlett-Packard', status: 'active' },
+        { name: 'Dell', code: 'BR-DEL', description: 'Dell Inc', status: 'active' },
+        { name: 'Philips', code: 'BR-PHI', description: 'Philips Consumer', status: 'active' },
+        { name: 'Havells', code: 'BR-HAV', description: 'Havells Electricals', status: 'active' },
+        { name: 'Schneider Electric', code: 'BR-SCH', description: 'Schneider Industrial', status: 'active' },
+      ]);
+    }
+
+    const unitCount = await Unit.countDocuments();
+    let seededUnits = [];
+    if (unitCount === 0) {
+      seededUnits = await Unit.insertMany([
+        { name: 'Pieces', shortName: 'pcs', status: 'active' },
+        { name: 'Kilograms', shortName: 'kg', status: 'active' },
+        { name: 'Meters', shortName: 'm', status: 'active' },
+        { name: 'Boxes', shortName: 'box', status: 'active' },
+        { name: 'Liters', shortName: 'ltr', status: 'active' },
+        { name: 'Sets', shortName: 'set', status: 'active' },
+        { name: 'Packs', shortName: 'pack', status: 'active' },
+      ]);
+    }
+
+    const whCount = await Warehouse.countDocuments();
+    let seededWarehouses = [];
+    if (whCount === 0) {
+      seededWarehouses = await Warehouse.insertMany([
+        { name: 'Main Central Warehouse', code: 'WH-MAIN', city: 'Mumbai', managerName: 'Store Head', status: 'active' },
+        { name: 'Branch Depot A', code: 'WH-DEP-A', city: 'Delhi', managerName: 'Depot Manager', status: 'active' },
+        { name: 'Regional Storage B', code: 'WH-REG-B', city: 'Bangalore', managerName: 'Stock Supervisor', status: 'active' },
+      ]);
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Initial stock metadata seeded successfully',
+      data: { seededCategories, seededBrands, seededUnits, seededWarehouses },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // --- Dashboard Stats ---
 export const getDashboardStats = async (req, res, next) => {
   try {
@@ -60,7 +126,18 @@ export const getDashboardStats = async (req, res, next) => {
 // --- Category Controllers ---
 export const getCategories = async (req, res, next) => {
   try {
-    const categories = await Category.find().sort({ createdAt: -1 });
+    let categories = await Category.find().sort({ createdAt: -1 });
+    if (categories.length === 0) {
+      await Category.insertMany([
+        { name: 'Electronics', code: 'CAT-ELE', description: 'Electronic items & gadgets', status: 'active' },
+        { name: 'Hardware & Tools', code: 'CAT-HDW', description: 'Hardware equipment and tools', status: 'active' },
+        { name: 'Home & Office Appliances', code: 'CAT-APP', description: 'Electrical appliances', status: 'active' },
+        { name: 'Raw Materials', code: 'CAT-RAW', description: 'Industrial raw materials', status: 'active' },
+        { name: 'Office Supplies', code: 'CAT-SUP', description: 'Consumables & stationery', status: 'active' },
+        { name: 'Spare Parts', code: 'CAT-SPR', description: 'Component spare parts', status: 'active' },
+      ]);
+      categories = await Category.find().sort({ createdAt: -1 });
+    }
     res.status(200).json({ status: 'success', data: categories });
   } catch (error) {
     next(error);
@@ -99,7 +176,21 @@ export const deleteCategory = async (req, res, next) => {
 // --- Brand Controllers ---
 export const getBrands = async (req, res, next) => {
   try {
-    const brands = await Brand.find().sort({ createdAt: -1 });
+    let brands = await Brand.find().sort({ createdAt: -1 });
+    if (brands.length === 0) {
+      await Brand.insertMany([
+        { name: 'Samsung', code: 'BR-SAM', description: 'Samsung Electronics', status: 'active' },
+        { name: 'LG Electronics', code: 'BR-LGE', description: 'LG Electronics', status: 'active' },
+        { name: 'Bosch', code: 'BR-BSC', description: 'Bosch Tools & Technology', status: 'active' },
+        { name: 'Tata', code: 'BR-TAT', description: 'Tata Enterprise', status: 'active' },
+        { name: 'HP', code: 'BR-HPP', description: 'Hewlett-Packard', status: 'active' },
+        { name: 'Dell', code: 'BR-DEL', description: 'Dell Inc', status: 'active' },
+        { name: 'Philips', code: 'BR-PHI', description: 'Philips Consumer', status: 'active' },
+        { name: 'Havells', code: 'BR-HAV', description: 'Havells Electricals', status: 'active' },
+        { name: 'Schneider Electric', code: 'BR-SCH', description: 'Schneider Industrial', status: 'active' },
+      ]);
+      brands = await Brand.find().sort({ createdAt: -1 });
+    }
     res.status(200).json({ status: 'success', data: brands });
   } catch (error) {
     next(error);
@@ -138,7 +229,19 @@ export const deleteBrand = async (req, res, next) => {
 // --- Unit Controllers ---
 export const getUnits = async (req, res, next) => {
   try {
-    const units = await Unit.find().sort({ createdAt: -1 });
+    let units = await Unit.find().sort({ createdAt: -1 });
+    if (units.length === 0) {
+      await Unit.insertMany([
+        { name: 'Pieces', shortName: 'pcs', status: 'active' },
+        { name: 'Kilograms', shortName: 'kg', status: 'active' },
+        { name: 'Meters', shortName: 'm', status: 'active' },
+        { name: 'Boxes', shortName: 'box', status: 'active' },
+        { name: 'Liters', shortName: 'ltr', status: 'active' },
+        { name: 'Sets', shortName: 'set', status: 'active' },
+        { name: 'Packs', shortName: 'pack', status: 'active' },
+      ]);
+      units = await Unit.find().sort({ createdAt: -1 });
+    }
     res.status(200).json({ status: 'success', data: units });
   } catch (error) {
     next(error);
@@ -177,7 +280,15 @@ export const deleteUnit = async (req, res, next) => {
 // --- Warehouse Controllers ---
 export const getWarehouses = async (req, res, next) => {
   try {
-    const warehouses = await Warehouse.find().sort({ createdAt: -1 });
+    let warehouses = await Warehouse.find().sort({ createdAt: -1 });
+    if (warehouses.length === 0) {
+      await Warehouse.insertMany([
+        { name: 'Main Central Warehouse', code: 'WH-MAIN', city: 'Mumbai', managerName: 'Store Head', status: 'active' },
+        { name: 'Branch Depot A', code: 'WH-DEP-A', city: 'Delhi', managerName: 'Depot Manager', status: 'active' },
+        { name: 'Regional Storage B', code: 'WH-REG-B', city: 'Bangalore', managerName: 'Stock Supervisor', status: 'active' },
+      ]);
+      warehouses = await Warehouse.find().sort({ createdAt: -1 });
+    }
     res.status(200).json({ status: 'success', data: warehouses });
   } catch (error) {
     next(error);
@@ -342,6 +453,129 @@ export const deleteProduct = async (req, res, next) => {
   }
 };
 
+// --- Bulk Product Import (Excel / CSV) ---
+export const bulkImportProducts = async (req, res, next) => {
+  try {
+    const { products: items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ status: 'fail', message: 'No items provided for bulk import' });
+    }
+
+    // Default fallbacks
+    let defaultCat = await Category.findOne({ status: 'active' });
+    if (!defaultCat) {
+      defaultCat = await Category.create({ name: 'General Category', code: 'CAT-GEN', status: 'active' });
+    }
+
+    let defaultUnit = await Unit.findOne({ status: 'active' });
+    if (!defaultUnit) {
+      defaultUnit = await Unit.create({ name: 'Pieces', shortName: 'pcs', status: 'active' });
+    }
+
+    const createdProducts = [];
+    for (const item of items) {
+      if (!item.name && !item.Name) continue;
+
+      const pName = item.name || item.Name;
+      const pSku = item.sku || item.SKU || `SKU-IMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const pPurchasePrice = Number(item.purchasePrice || item.PurchasePrice || item['Purchase Price']) || 0;
+      const pSellingPrice = Number(item.sellingPrice || item.SellingPrice || item['Selling Price']) || 0;
+      const pMinStock = Number(item.minStockLevel || item.MinStockLevel || item['Min Stock Level']) || 5;
+      const pOpeningStock = Number(item.openingStock || item.OpeningStock || item['Opening Stock']) || 0;
+      const pDesc = item.description || item.Description || 'Imported via Excel sheet';
+
+      // Auto resolve Category
+      let itemCatId = defaultCat._id;
+      const catInput = item.category || item.Category;
+      if (catInput) {
+        const foundCat = await Category.findOne({
+          $or: [{ _id: catInput.match(/^[0-9a-fA-F]{24}$/) ? catInput : null }, { name: new RegExp('^' + catInput + '$', 'i') }],
+        });
+        if (foundCat) {
+          itemCatId = foundCat._id;
+        } else {
+          const newCat = await Category.create({ name: catInput, code: `CAT-${Date.now().toString().slice(-4)}` });
+          itemCatId = newCat._id;
+        }
+      }
+
+      // Auto resolve Brand
+      let itemBrandId = null;
+      const brandInput = item.brand || item.Brand;
+      if (brandInput) {
+        const foundBrand = await Brand.findOne({
+          $or: [{ _id: brandInput.match(/^[0-9a-fA-F]{24}$/) ? brandInput : null }, { name: new RegExp('^' + brandInput + '$', 'i') }],
+        });
+        if (foundBrand) {
+          itemBrandId = foundBrand._id;
+        } else {
+          const newBrand = await Brand.create({ name: brandInput, code: `BR-${Date.now().toString().slice(-4)}` });
+          itemBrandId = newBrand._id;
+        }
+      }
+
+      // Auto resolve Unit
+      let itemUnitId = defaultUnit._id;
+      const unitInput = item.unit || item.Unit;
+      if (unitInput) {
+        const foundUnit = await Unit.findOne({
+          $or: [
+            { _id: unitInput.match(/^[0-9a-fA-F]{24}$/) ? unitInput : null },
+            { name: new RegExp('^' + unitInput + '$', 'i') },
+            { shortName: new RegExp('^' + unitInput + '$', 'i') },
+          ],
+        });
+        if (foundUnit) {
+          itemUnitId = foundUnit._id;
+        } else {
+          const newUnit = await Unit.create({ name: unitInput, shortName: unitInput.slice(0, 5).toLowerCase() });
+          itemUnitId = newUnit._id;
+        }
+      }
+
+      const newProduct = await Product.create({
+        sku: pSku,
+        name: pName,
+        category: itemCatId,
+        brand: itemBrandId,
+        unit: itemUnitId,
+        purchasePrice: pPurchasePrice,
+        sellingPrice: pSellingPrice,
+        minStockLevel: pMinStock,
+        currentStock: pOpeningStock,
+        openingStock: pOpeningStock,
+        description: pDesc,
+        status: 'active',
+      });
+
+      if (pOpeningStock > 0) {
+        await StockMovement.create({
+          transactionType: 'opening_stock',
+          product: newProduct._id,
+          quantity: pOpeningStock,
+          unitPrice: pPurchasePrice,
+          totalPrice: pOpeningStock * pPurchasePrice,
+          referenceNo: 'INIT-OP-' + newProduct.sku,
+          notes: 'Bulk Excel import opening stock',
+          performedBy: req.user._id,
+          performerModel: req.user.role === 'superAdmin' || req.user.role === 'admin' ? 'Admin' : 'User',
+        });
+      }
+
+      createdProducts.push(newProduct);
+    }
+
+    res.status(201).json({
+      status: 'success',
+      message: `Successfully imported ${createdProducts.length} products`,
+      count: createdProducts.length,
+      data: createdProducts,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // --- Stock Transactions & Entries ---
 export const recordStockMovement = async (req, res, next) => {
   try {
@@ -358,7 +592,6 @@ export const recordStockMovement = async (req, res, next) => {
     const price = Number(unitPrice) || product.purchasePrice || 0;
     const totalPrice = qty * price;
 
-    // Adjust product currentStock and warehouseStock
     let stockDelta = 0;
     if (['stock_in', 'purchase', 'opening_stock'].includes(transactionType)) {
       stockDelta = qty;
@@ -368,7 +601,7 @@ export const recordStockMovement = async (req, res, next) => {
         return res.status(400).json({ status: 'fail', message: `Insufficient stock! Current stock is ${product.currentStock}` });
       }
     } else if (transactionType === 'adjustment') {
-      stockDelta = qty; // can be positive or negative based on input
+      stockDelta = qty;
     }
 
     product.currentStock += stockDelta;
