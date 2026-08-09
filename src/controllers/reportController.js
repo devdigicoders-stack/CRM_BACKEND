@@ -15,8 +15,12 @@ const getFilterQuery = async (req) => {
     const branchUserIds = await getBranchUserIds(req.user._id);
     const branchUserObjectIds = branchUserIds.map(id => new mongoose.Types.ObjectId(id));
     if (assignedTo) {
-      const isBranchUser = branchUserIds.some(id => id.toString() === assignedTo);
-      query.assignedTo = isBranchUser ? new mongoose.Types.ObjectId(assignedTo) : { $in: [] };
+      if (assignedTo === 'unassigned') {
+        query.assignedTo = { $eq: null };
+      } else {
+        const isBranchUser = branchUserIds.some(id => id.toString() === assignedTo);
+        query.assignedTo = isBranchUser ? new mongoose.Types.ObjectId(assignedTo) : { $in: [] };
+      }
     } else {
       query.$or = [
         { assignedTo: { $in: branchUserObjectIds } },
@@ -24,7 +28,11 @@ const getFilterQuery = async (req) => {
       ];
     }
   } else if (assignedTo) {
-    query.assignedTo = new mongoose.Types.ObjectId(assignedTo);
+    if (assignedTo === 'unassigned') {
+      query.assignedTo = { $eq: null };
+    } else {
+      query.assignedTo = new mongoose.Types.ObjectId(assignedTo);
+    }
   }
 
   if (search) {
@@ -37,7 +45,16 @@ const getFilterQuery = async (req) => {
 
   if (status) query.status = status;
   if (priority) query.priority = priority;
-  if (tag) query.tags = tag;
+  if (tag) {
+    const knownStatuses = ['new', 'assigned', 'interested', 'in_process', 'not_interested', 'converted', 'closed', 'call_done'];
+    if (tag.toLowerCase() === 'unassigned') {
+      query.assignedTo = { $eq: null };
+    } else if (knownStatuses.includes(tag.toLowerCase())) {
+      query.status = tag.toLowerCase();
+    } else {
+      query.tags = tag;
+    }
+  }
 
   if (followUpDate) {
     const startOfDay = new Date(followUpDate);
@@ -83,13 +100,14 @@ export const exportLeadsExcel = async (req, res, next) => {
       Phone: lead.phone,
       Email: lead.email || 'N/A',
       Source: lead.source || 'Direct',
-      Status: lead.status.toUpperCase(),
-      Priority: lead.priority.toUpperCase(),
+      Status: lead.status ? lead.status.toUpperCase() : 'N/A',
+      Priority: lead.priority ? lead.priority.toUpperCase() : 'N/A',
+      Tags: Array.isArray(lead.tags) ? lead.tags.join(', ') : (lead.tags || 'N/A'),
       AssignedTo: lead.assignedTo ? lead.assignedTo.name : 'Unassigned',
       CreatedBy: lead.createdBy ? lead.createdBy.name : 'System',
       FollowUpDate: lead.followUpDate ? new Date(lead.followUpDate).toLocaleString() : 'Not Set',
-      RemarksCount: lead.remarks.length,
-      LatestRemarks: lead.remarks.map((r) => r.note).join(' | '),
+      RemarksCount: lead.remarks ? lead.remarks.length : 0,
+      LatestRemarks: lead.remarks ? lead.remarks.map((r) => r.note).join(' | ') : '',
       CreatedAt: new Date(lead.createdAt).toLocaleDateString(),
     }));
 
