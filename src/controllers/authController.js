@@ -51,11 +51,11 @@ export const register = async (req, res, next) => {
 
     // 1) Verify role exists in valid sets
     const isAdminRole = ['superAdmin', 'admin', 'branchManager'].includes(targetRole);
-    const isUserRole = ['accountant', 'sales', 'calling', 'installation', 'crmuser'].includes(targetRole);
+    const isUserRole = ['accountant', 'sales', 'calling', 'installation', 'crmuser', 'stock'].includes(targetRole);
 
     if (!isAdminRole && !isUserRole) {
       res.status(400);
-      throw new Error(`Invalid role. Allowed roles: admin, superAdmin, branchManager, accountant, sales (or sales_rep), calling, installation, crmuser`);
+      throw new Error(`Invalid role. Allowed roles: admin, superAdmin, branchManager, accountant, sales (or sales_rep), calling, installation, crmuser, stock`);
     }
 
     // 2) Check if email is already taken in either collection

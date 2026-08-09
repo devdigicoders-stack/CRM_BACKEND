@@ -11,6 +11,7 @@ import * as reportController from '../controllers/reportController.js';
 import * as accountsController from '../controllers/accountsController.js';
 import * as installationController from '../controllers/installationController.js';
 import * as branchController from '../controllers/branchController.js';
+import * as stockController from '../controllers/stockController.js';
 import { protect, restrictTo, checkPermission } from '../middlewares/authMiddleware.js';
 
 export const apiRouter = Router();
@@ -62,7 +63,7 @@ apiRouter.post('/users', protect, restrictTo('superAdmin', 'admin', 'branchManag
 apiRouter.get('/users/installers', protect, restrictTo('superAdmin', 'admin', 'accountant'), userController.getInstallers);
 apiRouter.get('/users/tracking/summary', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('users'), userController.getUsersTrackingSummary);
 apiRouter.get('/users/:id/history', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('users'), userController.getUserHistory);
-apiRouter.get('/users', protect, restrictTo('superAdmin', 'admin', 'accountant', 'crmuser', 'sales', 'branchManager'), checkPermission('users'), userController.getUsers);
+apiRouter.get('/users', protect, restrictTo('superAdmin', 'admin', 'accountant', 'crmuser', 'sales', 'branchManager', 'stock'), checkPermission('users'), userController.getUsers);
 apiRouter.get('/users/:id', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('users'), userController.getUserById);
 apiRouter.put('/users/:id', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('users'), userController.updateUser);
 apiRouter.put('/users/:id/password', protect, restrictTo('superAdmin'), userController.updateUserPassword);
@@ -113,4 +114,44 @@ apiRouter.delete('/installation/leads/:id/proof', protect, restrictTo('superAdmi
 apiRouter.put('/installation/leads/:id/issue', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.reportInstallationIssue);
 apiRouter.put('/installation/leads/:id/resolve-issue', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.resolveInstallationIssue);
 apiRouter.put('/installation/leads/:id/clear-transit-remark', protect, restrictTo('superAdmin', 'admin', 'installation'), checkPermission('installation'), installationController.clearInTransitRemark);
+
+// --- Stock Management Routes ---
+apiRouter.get('/stock/dashboard', protect, stockController.getDashboardStats);
+
+// Categories
+apiRouter.get('/stock/categories', protect, stockController.getCategories);
+apiRouter.post('/stock/categories', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.createCategory);
+apiRouter.put('/stock/categories/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.updateCategory);
+apiRouter.delete('/stock/categories/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.deleteCategory);
+
+// Brands
+apiRouter.get('/stock/brands', protect, stockController.getBrands);
+apiRouter.post('/stock/brands', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.createBrand);
+apiRouter.put('/stock/brands/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.updateBrand);
+apiRouter.delete('/stock/brands/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.deleteBrand);
+
+// Units
+apiRouter.get('/stock/units', protect, stockController.getUnits);
+apiRouter.post('/stock/units', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.createUnit);
+apiRouter.put('/stock/units/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.updateUnit);
+apiRouter.delete('/stock/units/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.deleteUnit);
+
+// Warehouses
+apiRouter.get('/stock/warehouses', protect, stockController.getWarehouses);
+apiRouter.post('/stock/warehouses', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.createWarehouse);
+apiRouter.put('/stock/warehouses/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.updateWarehouse);
+apiRouter.delete('/stock/warehouses/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.deleteWarehouse);
+
+// Products
+apiRouter.get('/stock/products', protect, stockController.getProducts);
+apiRouter.get('/stock/products/export', protect, stockController.exportProductsExcel);
+apiRouter.get('/stock/products/:id', protect, stockController.getProductById);
+apiRouter.post('/stock/products', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.createProduct);
+apiRouter.put('/stock/products/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.updateProduct);
+apiRouter.delete('/stock/products/:id', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.deleteProduct);
+
+// Stock Movements
+apiRouter.get('/stock/movements', protect, stockController.getStockMovements);
+apiRouter.post('/stock/movements', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.recordStockMovement);
+
 

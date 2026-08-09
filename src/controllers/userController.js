@@ -20,11 +20,11 @@ export const createUser = async (req, res, next) => {
 
     // Check role validity
     const isAdminRole = ['superAdmin', 'admin'].includes(targetRole);
-    const isUserRole = ['accountant', 'sales', 'calling', 'installation', 'crmuser'].includes(targetRole);
+    const isUserRole = ['accountant', 'sales', 'calling', 'installation', 'crmuser', 'stock'].includes(targetRole);
 
     if (!isAdminRole && !isUserRole) {
       res.status(400);
-      throw new Error('Invalid role. Allowed roles: admin, superAdmin, accountant, sales (or sales_rep), calling, installation, crmuser');
+      throw new Error('Invalid role. Allowed roles: admin, superAdmin, accountant, sales (or sales_rep), calling, installation, crmuser, stock');
     }
 
     // Role hierarchy checks
