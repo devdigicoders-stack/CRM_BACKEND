@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Admin } from '../models/Admin.js';
 import { User } from '../models/User.js';
 import { Lead } from '../models/Lead.js';
+import { Branch } from '../models/Branch.js';
 
 // @desc    Create a new user (decides collection by role)
 // @route   POST /api/v1/users
@@ -150,11 +151,26 @@ export const getUserById = async (req, res, next) => {
 // @access  Private (Super Admin and Admin only)
 export const getUsers = async (req, res, next) => {
   try {
-    const { search, role, active, page = 1, limit = 10 } = req.query;
+    const { search, role, active, branchId, page = 1, limit = 10 } = req.query;
 
     const query = {};
 
-    if (req.user.role === 'branchManager') {
+    if (branchId) {
+      const branch = await Branch.findById(branchId).select('branchManager assignedUsers');
+      if (branch) {
+        const branchUserIds = [
+          ...(branch.assignedUsers || []).map(id => id.toString()),
+          ...(branch.branchManager ? [branch.branchManager.toString()] : [])
+        ];
+        const branchAdmins = await Admin.find({ branchId }).select('_id');
+        branchAdmins.forEach(adm => {
+          if (!branchUserIds.includes(adm._id.toString())) {
+            branchUserIds.push(adm._id.toString());
+          }
+        });
+        query._id = { $in: branchUserIds };
+      }
+    } else if (req.user.role === 'branchManager') {
       const { getBranchUserIds } = await import('../utils/branchHelper.js');
       const branchUserIds = await getBranchUserIds(req.user._id);
       query._id = { $in: branchUserIds };
@@ -658,7 +674,7 @@ export const getUserHistory = async (req, res, next) => {
 // @access  Private (Super Admin and Admin only)
 export const getUsersTrackingSummary = async (req, res, next) => {
   try {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, branchId } = req.query;
 
     let dateFilter = {};
     if (startDate && endDate) {
@@ -676,7 +692,23 @@ export const getUsersTrackingSummary = async (req, res, next) => {
     let users = await User.find({}).select('name email role phone active profilePic').lean();
     let admins = await Admin.find({}).select('name email role phone active profilePic').lean();
     
-    if (req.user.role === 'branchManager') {
+    if (branchId) {
+      const branch = await Branch.findById(branchId).select('branchManager assignedUsers');
+      if (branch) {
+        const branchUserIds = [
+          ...(branch.assignedUsers || []).map(id => id.toString()),
+          ...(branch.branchManager ? [branch.branchManager.toString()] : [])
+        ];
+        const branchAdmins = await Admin.find({ branchId }).select('_id');
+        branchAdmins.forEach(adm => {
+          if (!branchUserIds.includes(adm._id.toString())) {
+            branchUserIds.push(adm._id.toString());
+          }
+        });
+        users = users.filter(u => branchUserIds.includes(u._id.toString()));
+        admins = admins.filter(a => branchUserIds.includes(a._id.toString()));
+      }
+    } else if (req.user.role === 'branchManager') {
       const { getBranchUserIds } = await import('../utils/branchHelper.js');
       const branchUserIds = await getBranchUserIds(req.user._id).then(ids => ids.map(id => id.toString()));
       users = users.filter(u => branchUserIds.includes(u._id.toString()));

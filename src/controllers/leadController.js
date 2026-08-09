@@ -5,6 +5,7 @@ import XLSX from 'xlsx';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
 import { Admin } from '../models/Admin.js';
+import { Branch } from '../models/Branch.js';
 import { Notification } from '../models/Notification.js';
 import { sendPushNotification } from '../config/firebase.js';
 
@@ -181,13 +182,41 @@ export const checkPhoneExists = async (req, res, next) => {
 // @access  Private
 export const getLeads = async (req, res, next) => {
   try {
-    const { search, status, priority, tag, assignedTo, followUpDate, createdAt, page = 1, limit } = req.query;
+    const { search, status, priority, tag, assignedTo, branchId, followUpDate, createdAt, page = 1, limit } = req.query;
 
     const query = {};
 
     // 1) Security constraint
     if (['superAdmin', 'admin'].includes(req.user.role)) {
-      if (assignedTo) {
+      if (branchId) {
+        const branch = await Branch.findById(branchId).select('branchManager assignedUsers');
+        if (branch) {
+          const branchUserIds = [
+            ...(branch.assignedUsers || []).map(id => id.toString()),
+            ...(branch.branchManager ? [branch.branchManager.toString()] : [])
+          ];
+          const branchAdmins = await Admin.find({ branchId }).select('_id');
+          branchAdmins.forEach(adm => {
+            if (!branchUserIds.includes(adm._id.toString())) {
+              branchUserIds.push(adm._id.toString());
+            }
+          });
+
+          if (assignedTo) {
+            if (assignedTo === 'unassigned') {
+              query.assignedTo = { $eq: null };
+              query.createdBy = { $in: branchUserIds };
+            } else {
+              query.assignedTo = assignedTo;
+            }
+          } else {
+            query.$or = [
+              { assignedTo: { $in: branchUserIds } },
+              { createdBy: { $in: branchUserIds } }
+            ];
+          }
+        }
+      } else if (assignedTo) {
         if (assignedTo === 'unassigned') {
           query.assignedTo = { $eq: null };
         } else {
