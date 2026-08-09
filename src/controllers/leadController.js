@@ -8,6 +8,8 @@ import { Admin } from '../models/Admin.js';
 import { Branch } from '../models/Branch.js';
 import { Notification } from '../models/Notification.js';
 import { sendPushNotification } from '../config/firebase.js';
+import { Product } from '../models/Product.js';
+import { StockMovement } from '../models/StockMovement.js';
 
 const sendNotification = async (recipientId, title, message, leadId, metadata = null, type = 'general') => {
   try {
@@ -366,7 +368,8 @@ export const getLeadById = async (req, res, next) => {
       .populate('assignedTo', 'name email role phone')
       .populate('createdBy', 'name email')
       .populate('assignedBy', 'name email role phone')
-      .populate('remarks.addedBy', 'name email role');
+      .populate('remarks.addedBy', 'name email role')
+      .populate('productId');
 
     if (!lead) {
       res.status(404);
@@ -880,7 +883,7 @@ export const transferToAccounts = async (req, res, next) => {
 
 export const confirmSale = async (req, res, next) => {
   try {
-    const { productDetails, accountRemarks } = req.body;
+    const { productDetails, accountRemarks, productId, productQuantity } = req.body;
     const transferToAccounts = req.body.transferToAccounts === 'true' || req.body.transferToAccounts === true;
     const dealValue = req.body.dealValue !== undefined ? Number(req.body.dealValue) : undefined;
     const amountPaid = req.body.amountPaid !== undefined ? Number(req.body.amountPaid) : undefined;
@@ -924,6 +927,52 @@ export const confirmSale = async (req, res, next) => {
     if (!hasNewScreenshot && !hasOldScreenshot) {
       res.status(400);
       throw new Error('Payment screenshot is required');
+    }
+
+    // Deduct stock if a productId is linked
+    if (productId) {
+      const product = await Product.findById(productId);
+      if (!product) {
+        res.status(400);
+        throw new Error('Product not found in stock catalog');
+      }
+      const qty = Number(productQuantity) || 1;
+      if (product.currentStock < qty) {
+        res.status(400);
+        throw new Error(`Insufficient stock! Only ${product.currentStock} units available for ${product.name}`);
+      }
+      
+      product.currentStock -= qty;
+      
+      let warehouseId = null;
+      if (product.warehouseStock && product.warehouseStock.length > 0) {
+        const whStock = product.warehouseStock.find(w => w.quantity >= qty);
+        if (whStock) {
+          whStock.quantity -= qty;
+          warehouseId = whStock.warehouse;
+        } else {
+          product.warehouseStock[0].quantity = Math.max(0, product.warehouseStock[0].quantity - qty);
+          warehouseId = product.warehouseStock[0].warehouse;
+        }
+      }
+      
+      await product.save();
+      
+      // Record Stock Out movement
+      await StockMovement.create({
+        transactionType: 'stock_out',
+        product: product._id,
+        warehouse: warehouseId || undefined,
+        quantity: -qty,
+        referenceNo: `SALE-${lead._id}`,
+        customer: lead.name,
+        notes: `Auto stock deduction for Sale Confirmation of Lead #${lead._id}`,
+        performedBy: req.user._id,
+        performerModel: req.user.role === 'admin' || req.user.role === 'superAdmin' ? 'Admin' : 'User'
+      });
+      
+      lead.productId = productId;
+      lead.productQuantity = qty;
     }
 
     lead.productDetails = productDetails;

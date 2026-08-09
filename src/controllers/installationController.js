@@ -139,6 +139,7 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
     const leads = await Lead.find(query)
       .populate('installationRep', 'name email role')
       .populate('assignedTo', 'name email role')
+      .populate('productId')
       .sort({ createdAt: -1 })
       .skip(skipNum)
       .limit(limitNum)

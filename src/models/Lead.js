@@ -151,6 +151,14 @@ const leadSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    productId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Product',
+    },
+    productQuantity: {
+      type: Number,
+      default: 1,
+    },
     dealValue: {
       type: Number,
       default: 0,
