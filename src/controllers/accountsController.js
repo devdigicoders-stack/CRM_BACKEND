@@ -4,6 +4,8 @@ import fs from 'fs';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
 import { Admin } from '../models/Admin.js';
+import { Product } from '../models/Product.js';
+import { StockMovement } from '../models/StockMovement.js';
 import { Notification } from '../models/Notification.js';
 import { sendPushNotification } from '../config/firebase.js';
 
@@ -266,6 +268,51 @@ export const transferToInstallation = async (req, res, next) => {
     if (lead.verificationStatus !== 'verified') {
       res.status(400); throw new Error('Lead must be approved/verified before transferring to Installation Team');
     }
+    if (lead.transferredToInstallation) {
+      res.status(400); throw new Error('Lead has already been transferred to Installation Team');
+    }
+
+    // Deduct stock if a productId is linked to this lead
+    if (lead.productId) {
+      const product = await Product.findById(lead.productId);
+      if (product) {
+        const qty = Number(lead.productQuantity) || 1;
+        if (product.currentStock < qty) {
+          res.status(400);
+          throw new Error(`Insufficient stock in catalog for ${product.name}! Required: ${qty}, Available: ${product.currentStock}`);
+        }
+
+        product.currentStock -= qty;
+
+        let warehouseId = null;
+        if (product.warehouseStock && product.warehouseStock.length > 0) {
+          const whStock = product.warehouseStock.find(w => w.quantity >= qty);
+          if (whStock) {
+            whStock.quantity -= qty;
+            warehouseId = whStock.warehouse;
+          } else {
+            product.warehouseStock[0].quantity = Math.max(0, product.warehouseStock[0].quantity - qty);
+            warehouseId = product.warehouseStock[0].warehouse;
+          }
+        }
+
+        await product.save();
+
+        // Record Stock Out movement
+        await StockMovement.create({
+          transactionType: 'stock_out',
+          product: product._id,
+          warehouse: warehouseId || undefined,
+          quantity: -qty,
+          referenceNo: `SALE-${lead._id}`,
+          customer: lead.name,
+          notes: `Auto stock deduction on Transfer to Installation of Lead #${lead._id}`,
+          performedBy: req.user._id,
+          performerModel: req.user.role === 'admin' || req.user.role === 'superAdmin' ? 'Admin' : 'User'
+        });
+      }
+    }
+
     lead.transferredToInstallation = true;
     lead.status = 'in_process';
     lead.remarks.push({ note: `[Accounts Team] Verified Lead transferred to Installation Team.`, addedBy: req.user._id });

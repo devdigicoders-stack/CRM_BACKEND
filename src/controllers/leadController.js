@@ -929,7 +929,7 @@ export const confirmSale = async (req, res, next) => {
       throw new Error('Payment screenshot is required');
     }
 
-    // Deduct stock if a productId is linked
+    // Validate product if a productId is linked
     if (productId) {
       const product = await Product.findById(productId);
       if (!product) {
@@ -937,40 +937,6 @@ export const confirmSale = async (req, res, next) => {
         throw new Error('Product not found in stock catalog');
       }
       const qty = Number(productQuantity) || 1;
-      if (product.currentStock < qty) {
-        res.status(400);
-        throw new Error(`Insufficient stock! Only ${product.currentStock} units available for ${product.name}`);
-      }
-      
-      product.currentStock -= qty;
-      
-      let warehouseId = null;
-      if (product.warehouseStock && product.warehouseStock.length > 0) {
-        const whStock = product.warehouseStock.find(w => w.quantity >= qty);
-        if (whStock) {
-          whStock.quantity -= qty;
-          warehouseId = whStock.warehouse;
-        } else {
-          product.warehouseStock[0].quantity = Math.max(0, product.warehouseStock[0].quantity - qty);
-          warehouseId = product.warehouseStock[0].warehouse;
-        }
-      }
-      
-      await product.save();
-      
-      // Record Stock Out movement
-      await StockMovement.create({
-        transactionType: 'stock_out',
-        product: product._id,
-        warehouse: warehouseId || undefined,
-        quantity: -qty,
-        referenceNo: `SALE-${lead._id}`,
-        customer: lead.name,
-        notes: `Auto stock deduction for Sale Confirmation of Lead #${lead._id}`,
-        performedBy: req.user._id,
-        performerModel: req.user.role === 'admin' || req.user.role === 'superAdmin' ? 'Admin' : 'User'
-      });
-      
       lead.productId = productId;
       lead.productQuantity = qty;
     }
