@@ -257,6 +257,9 @@ leadSchema.index({ name: 'text', phone: 'text', email: 'text' });
 
 // Performance optimization indexes
 leadSchema.index({ assignedTo: 1, status: 1 });
+leadSchema.index({ assignedTo: 1, isReassigned: 1 });
 leadSchema.index({ followUpDate: 1 });
+leadSchema.index({ createdAt: -1 });
+leadSchema.index({ isCallDone: 1, assignedTo: 1 });
 
 export const Lead = mongoose.model('Lead', leadSchema);

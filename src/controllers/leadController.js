@@ -184,7 +184,8 @@ export const checkPhoneExists = async (req, res, next) => {
 // @access  Private
 export const getLeads = async (req, res, next) => {
   try {
-    const { search, status, priority, tag, assignedTo, branchId, followUpDate, createdAt, page = 1, limit } = req.query;
+    const { search, status, priority, tag, assignedTo, branchId, followUpDate, createdAt, isCallDone, isReassigned, page = 1, limit } = req.query;
+
 
     const query = {};
 
@@ -285,8 +286,15 @@ export const getLeads = async (req, res, next) => {
       query.priority = priority;
     }
     if (tag) {
-      query.tags = tag; // MongoDB handles matching element in array automatically
+      query.tags = tag;
     }
+    if (isCallDone !== undefined) {
+      query.isCallDone = isCallDone === 'true';
+    }
+    if (isReassigned !== undefined) {
+      query.isReassigned = isReassigned === 'true';
+    }
+
 
     // 4) Follow up date filter
     if (followUpDate) {
@@ -322,25 +330,19 @@ export const getLeads = async (req, res, next) => {
 
     // Get total count
     const total = await Lead.countDocuments(query);
-    let limitNum = total;
+    const parsedLimit = limit !== undefined ? parseInt(limit, 10) : 100;
+    const limitNum = !isNaN(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100;
+    const skipNum = (pageNum - 1) * limitNum;
 
-    // Execute query sorted by creation date so updated leads keep their position
-    let queryBuilder = Lead.find(query)
+    // Execute query sorted by creation date
+    const leads = await Lead.find(query)
       .populate('assignedTo', 'name email role')
       .populate('createdBy', 'name email')
       .populate('assignedBy', 'name email role')
-      .sort({ createdAt: -1 });
-
-    if (limit !== undefined) {
-      const parsedLimit = parseInt(limit, 10);
-      if (!isNaN(parsedLimit)) {
-        limitNum = parsedLimit;
-        const skipNum = (pageNum - 1) * limitNum;
-        queryBuilder = queryBuilder.skip(skipNum).limit(limitNum);
-      }
-    }
-
-    const leads = await queryBuilder.lean();
+      .sort({ createdAt: -1 })
+      .skip(skipNum)
+      .limit(limitNum)
+      .lean();
 
     const formattedLeads = leads.map(formatLeadWithIntegrations);
 
