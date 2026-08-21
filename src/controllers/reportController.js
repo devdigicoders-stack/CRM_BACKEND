@@ -47,10 +47,15 @@ const getFilterQuery = async (req) => {
   if (priority) query.priority = priority;
   if (tag) {
     const knownStatuses = ['new', 'assigned', 'interested', 'in_process', 'not_interested', 'converted', 'closed', 'call_done'];
-    if (tag.toLowerCase() === 'unassigned') {
+    if (typeof tag === 'string' && tag.toLowerCase() === 'unassigned') {
       query.assignedTo = { $eq: null };
-    } else if (knownStatuses.includes(tag.toLowerCase())) {
+    } else if (typeof tag === 'string' && knownStatuses.includes(tag.toLowerCase())) {
       query.status = tag.toLowerCase();
+    } else if (Array.isArray(tag)) {
+      query.tags = { $in: tag };
+    } else if (typeof tag === 'string' && tag.includes(',')) {
+      const tagList = tag.split(',').map(t => t.trim()).filter(Boolean);
+      query.tags = { $in: tagList };
     } else {
       query.tags = tag;
     }
