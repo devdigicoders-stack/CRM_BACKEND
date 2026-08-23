@@ -222,6 +222,11 @@ export const getLeads = async (req, res, next) => {
       } else if (assignedTo) {
         if (assignedTo === 'unassigned') {
           query.assignedTo = { $eq: null };
+        } else if (typeof assignedTo === 'string' && assignedTo.includes(',')) {
+          const ids = assignedTo.split(',').map(s => s.trim()).filter(Boolean);
+          query.assignedTo = { $in: ids };
+        } else if (Array.isArray(assignedTo)) {
+          query.assignedTo = { $in: assignedTo };
         } else {
           query.assignedTo = assignedTo;
         }
@@ -1313,6 +1318,152 @@ export const deleteLead = async (req, res, next) => {
     res.status(200).json({
       status: 'success',
       message: 'Lead deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get staff members with assigned lead counts & status breakdown
+// @route   GET /api/v1/leads/staff-data-summary
+// @access  Private (Super Admin & Admin)
+export const getStaffDataSummary = async (req, res, next) => {
+  try {
+    if (!['superAdmin', 'admin'].includes(req.user.role)) {
+      res.status(403);
+      throw new Error('Only Super Admin and Admin can access staff data summary');
+    }
+
+    // Find all users who can be assigned leads (sales, crmuser, calling, etc.)
+    const users = await User.find({ role: { $in: ['sales', 'crmuser', 'calling', 'user', 'installation'] } })
+      .select('name email phone role active branchId')
+      .populate('branchId', 'name city state')
+      .sort({ name: 1 })
+      .lean();
+
+    // Aggregate leads count by assignedTo and status
+    const leadCounts = await Lead.aggregate([
+      {
+        $group: {
+          _id: {
+            assignedTo: '$assignedTo',
+            status: '$status',
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Count unassigned leads
+    const unassignedCount = await Lead.countDocuments({ assignedTo: null });
+    const totalLeadsInDb = await Lead.countDocuments();
+
+    const userStatsMap = {};
+    leadCounts.forEach((item) => {
+      if (item._id.assignedTo) {
+        const userId = item._id.assignedTo.toString();
+        if (!userStatsMap[userId]) {
+          userStatsMap[userId] = { total: 0, statusCounts: {} };
+        }
+        userStatsMap[userId].total += item.count;
+        userStatsMap[userId].statusCounts[item._id.status] = item.count;
+      }
+    });
+
+    const staffList = users.map((u) => {
+      const stats = userStatsMap[u._id.toString()] || { total: 0, statusCounts: {} };
+      return {
+        ...u,
+        totalLeads: stats.total,
+        statusCounts: stats.statusCounts,
+      };
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        staff: staffList,
+        unassignedCount,
+        totalLeadsInDb,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Bulk delete leads by lead IDs or by selected sales persons / staff IDs
+// @route   POST /api/v1/leads/bulk-delete
+// @access  Private (Super Admin only)
+export const bulkDeleteLeads = async (req, res, next) => {
+  try {
+    if (req.user.role !== 'superAdmin') {
+      res.status(403);
+      throw new Error('Only Super Admin is authorized to bulk delete staff data');
+    }
+
+    const { leadIds, userIds, status, startDate, endDate } = req.body;
+
+    const filter = {};
+
+    if (Array.isArray(leadIds) && leadIds.length > 0) {
+      filter._id = { $in: leadIds };
+    } else if (Array.isArray(userIds) && userIds.length > 0) {
+      // If 'unassigned' is included in userIds, handle null assignedTo
+      const hasUnassigned = userIds.includes('unassigned');
+      const validUserIds = userIds.filter((id) => id !== 'unassigned' && id.match(/^[0-9a-fA-F]{24}$/));
+
+      if (hasUnassigned && validUserIds.length > 0) {
+        filter.$or = [
+          { assignedTo: { $in: validUserIds } },
+          { assignedTo: null },
+        ];
+      } else if (hasUnassigned) {
+        filter.assignedTo = null;
+      } else {
+        filter.assignedTo = { $in: validUserIds };
+      }
+
+      if (status && status !== 'all') {
+        filter.status = status;
+      }
+
+      if (startDate || endDate) {
+        filter.createdAt = {};
+        if (startDate) filter.createdAt.$gte = new Date(startDate);
+        if (endDate) {
+          const endD = new Date(endDate);
+          endD.setHours(23, 59, 59, 999);
+          filter.createdAt.$lte = endD;
+        }
+      }
+    } else {
+      res.status(400);
+      throw new Error('Please select at least one lead or staff member to delete data');
+    }
+
+    const countToDelete = await Lead.countDocuments(filter);
+    if (countToDelete === 0) {
+      return res.status(200).json({
+        status: 'success',
+        message: 'No matching leads found to delete',
+        deletedCount: 0,
+      });
+    }
+
+    // Collect IDs for cleaning up associated notifications
+    const leadsToDelete = await Lead.find(filter).select('_id').lean();
+    const deletedIds = leadsToDelete.map((l) => l._id);
+
+    await Promise.all([
+      Lead.deleteMany(filter),
+      Notification.deleteMany({ lead: { $in: deletedIds } }),
+    ]);
+
+    res.status(200).json({
+      status: 'success',
+      message: `Successfully deleted ${countToDelete} leads permanently.`,
+      deletedCount: countToDelete,
     });
   } catch (error) {
     next(error);
