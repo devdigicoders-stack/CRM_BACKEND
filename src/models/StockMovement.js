@@ -40,6 +40,30 @@ const stockMovementSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    customerPhone: {
+      type: String,
+      trim: true,
+    },
+    salesPerson: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    salesPersonName: {
+      type: String,
+      trim: true,
+    },
+    invoiceNumber: {
+      type: String,
+      trim: true,
+    },
+    invoiceUrl: {
+      type: String,
+      trim: true,
+    },
+    lead: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Lead',
+    },
     notes: {
       type: String,
       trim: true,

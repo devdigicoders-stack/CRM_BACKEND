@@ -188,6 +188,21 @@ export const uploadInvoice = async (req, res, next) => {
       addedBy: req.user._id
     });
     const updatedLead = await lead.save();
+    
+    // Sync invoice details to any StockMovement linked to this lead
+    await StockMovement.updateMany(
+      { $or: [{ referenceNo: `SALE-${lead._id}` }, { lead: lead._id }] },
+      {
+        $set: {
+          invoiceNumber: lead.awbNumber,
+          invoiceUrl: lead.invoiceUrl,
+          customer: lead.name,
+          customerPhone: lead.phone,
+          salesPerson: lead.assignedTo || undefined,
+          lead: lead._id,
+        }
+      }
+    );
 
     // Notify sales rep about invoice
     if (lead.assignedTo) {
@@ -298,14 +313,28 @@ export const transferToInstallation = async (req, res, next) => {
 
         await product.save();
 
+        let salesPersonName = undefined;
+        if (lead.assignedTo) {
+          const spUser = await User.findById(lead.assignedTo).select('name').lean();
+          if (spUser) salesPersonName = spUser.name;
+        }
+
         // Record Stock Out movement
         await StockMovement.create({
           transactionType: 'stock_out',
           product: product._id,
           warehouse: warehouseId || undefined,
           quantity: -qty,
-          referenceNo: `SALE-${lead._id}`,
+          unitPrice: product.sellingPrice || product.purchasePrice || 0,
+          totalPrice: qty * (product.sellingPrice || product.purchasePrice || 0),
+          referenceNo: lead.awbNumber ? `INV-${lead.awbNumber}` : `SALE-${lead._id}`,
           customer: lead.name,
+          customerPhone: lead.phone,
+          lead: lead._id,
+          salesPerson: lead.assignedTo || undefined,
+          salesPersonName,
+          invoiceNumber: lead.awbNumber || `INV-${lead._id.toString().slice(-6).toUpperCase()}`,
+          invoiceUrl: lead.invoiceUrl || undefined,
           notes: `Auto stock deduction on Transfer to Installation of Lead #${lead._id}`,
           performedBy: req.user._id,
           performerModel: req.user.role === 'admin' || req.user.role === 'superAdmin' ? 'Admin' : 'User'

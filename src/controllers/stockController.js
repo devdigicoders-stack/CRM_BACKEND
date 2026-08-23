@@ -4,6 +4,8 @@ import { Unit } from '../models/Unit.js';
 import { Warehouse } from '../models/Warehouse.js';
 import { Product } from '../models/Product.js';
 import { StockMovement } from '../models/StockMovement.js';
+import { Lead } from '../models/Lead.js';
+import { User } from '../models/User.js';
 import XLSX from 'xlsx';
 
 // --- Default Data Seeder ---
@@ -98,8 +100,14 @@ export const getDashboardStats = async (req, res, next) => {
     });
 
     const recentMovements = await StockMovement.find()
-      .populate('product', 'name sku')
+      .populate('product', 'name sku unit')
       .populate('warehouse', 'name')
+      .populate('salesPerson', 'name email phone')
+      .populate({
+        path: 'lead',
+        select: 'name phone email invoiceUrl awbNumber assignedTo',
+        populate: { path: 'assignedTo', select: 'name email phone' }
+      })
       .sort({ createdAt: -1 })
       .limit(7);
 
@@ -579,7 +587,23 @@ export const bulkImportProducts = async (req, res, next) => {
 // --- Stock Transactions & Entries ---
 export const recordStockMovement = async (req, res, next) => {
   try {
-    const { transactionType, productId, warehouseId, quantity, unitPrice, referenceNo, supplier, customer, notes } = req.body;
+    const {
+      transactionType,
+      productId,
+      warehouseId,
+      quantity,
+      unitPrice,
+      referenceNo,
+      supplier,
+      customer,
+      customerPhone,
+      salesPerson,
+      salesPersonName: rawSalesPersonName,
+      invoiceNumber,
+      invoiceUrl,
+      lead,
+      notes,
+    } = req.body;
 
     const qty = Number(quantity);
     if (!qty || qty <= 0) {
@@ -617,6 +641,12 @@ export const recordStockMovement = async (req, res, next) => {
 
     await product.save();
 
+    let resolvedSalesPersonName = rawSalesPersonName;
+    if (salesPerson && !resolvedSalesPersonName) {
+      const spUser = await User.findById(salesPerson).select('name').lean();
+      if (spUser) resolvedSalesPersonName = spUser.name;
+    }
+
     const movement = await StockMovement.create({
       transactionType,
       product: productId,
@@ -627,6 +657,12 @@ export const recordStockMovement = async (req, res, next) => {
       referenceNo: referenceNo || `${transactionType.toUpperCase()}-${Date.now()}`,
       supplier,
       customer,
+      customerPhone,
+      salesPerson: salesPerson || undefined,
+      salesPersonName: resolvedSalesPersonName,
+      invoiceNumber,
+      invoiceUrl,
+      lead: lead || undefined,
       notes,
       performedBy: req.user._id,
       performerModel: req.user.role === 'superAdmin' || req.user.role === 'admin' ? 'Admin' : 'User',
@@ -640,7 +676,7 @@ export const recordStockMovement = async (req, res, next) => {
 
 export const getStockMovements = async (req, res, next) => {
   try {
-    const { transactionType, product, warehouse, startDate, endDate } = req.query;
+    const { transactionType, product, warehouse, startDate, endDate, search } = req.query;
     const filter = {};
 
     if (transactionType) filter.transactionType = transactionType;
@@ -649,14 +685,88 @@ export const getStockMovements = async (req, res, next) => {
     if (startDate || endDate) {
       filter.date = {};
       if (startDate) filter.date.$gte = new Date(startDate);
-      if (endDate) filter.date.$lte = new Date(endDate);
+      if (endDate) {
+        const endD = new Date(endDate);
+        endD.setHours(23, 59, 59, 999);
+        filter.date.$lte = endD;
+      }
     }
 
-    const movements = await StockMovement.find(filter)
-      .populate('product', 'name sku')
-      .populate('warehouse', 'name code')
-      .populate('performedBy', 'name email')
-      .sort({ date: -1 });
+    if (search && search.trim()) {
+      const regex = new RegExp(search.trim(), 'i');
+      filter.$or = [
+        { customer: regex },
+        { customerPhone: regex },
+        { invoiceNumber: regex },
+        { referenceNo: regex },
+        { salesPersonName: regex },
+        { notes: regex },
+        { supplier: regex },
+      ];
+    }
+
+    const rawMovements = await StockMovement.find(filter)
+      .populate('product', 'name sku unit purchasePrice sellingPrice category brand')
+      .populate('warehouse', 'name code location')
+      .populate('performedBy', 'name email role')
+      .populate('salesPerson', 'name email phone role')
+      .populate({
+        path: 'lead',
+        select: 'name phone email invoiceUrl awbNumber assignedTo dealValue address',
+        populate: { path: 'assignedTo', select: 'name email phone' }
+      })
+      .sort({ date: -1, createdAt: -1 })
+      .lean();
+
+    // Check if any legacy records have referenceNo 'SALE-<leadId>' without lead populated
+    const legacyLeadIds = [];
+    rawMovements.forEach((m) => {
+      if (!m.lead && m.referenceNo && m.referenceNo.startsWith('SALE-')) {
+        const potentialId = m.referenceNo.replace('SALE-', '').trim();
+        if (potentialId.match(/^[0-9a-fA-F]{24}$/)) {
+          legacyLeadIds.push(potentialId);
+        }
+      }
+    });
+
+    let legacyLeadMap = {};
+    if (legacyLeadIds.length > 0) {
+      const foundLeads = await Lead.find({ _id: { $in: legacyLeadIds } })
+        .populate('assignedTo', 'name email phone')
+        .lean();
+      foundLeads.forEach((l) => {
+        legacyLeadMap[l._id.toString()] = l;
+      });
+    }
+
+    // Enrich movements with fallback customer, salesPerson, and invoice details
+    const movements = rawMovements.map((m) => {
+      let linkedLead = m.lead;
+      if (!linkedLead && m.referenceNo && m.referenceNo.startsWith('SALE-')) {
+        const potentialId = m.referenceNo.replace('SALE-', '').trim();
+        if (legacyLeadMap[potentialId]) {
+          linkedLead = legacyLeadMap[potentialId];
+        }
+      }
+
+      const customerName = m.customer || linkedLead?.name || null;
+      const customerPhone = m.customerPhone || linkedLead?.phone || null;
+      const salesPersonObj = m.salesPerson || linkedLead?.assignedTo || null;
+      const salesPersonName = m.salesPersonName || salesPersonObj?.name || (typeof salesPersonObj === 'string' ? salesPersonObj : null);
+      const invoiceNumber = m.invoiceNumber || linkedLead?.awbNumber || (m.referenceNo?.startsWith('INV-') ? m.referenceNo : null);
+      const invoiceUrl = m.invoiceUrl || linkedLead?.invoiceUrl || null;
+
+      return {
+        ...m,
+        lead: linkedLead || null,
+        customer: customerName,
+        customerPhone,
+        salesPerson: salesPersonObj,
+        salesPersonName,
+        invoiceNumber,
+        invoiceUrl,
+      };
+    });
 
     res.status(200).json({ status: 'success', count: movements.length, data: movements });
   } catch (error) {
