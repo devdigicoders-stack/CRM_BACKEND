@@ -134,18 +134,7 @@ export const getDashboardStats = async (req, res, next) => {
 // --- Category Controllers ---
 export const getCategories = async (req, res, next) => {
   try {
-    let categories = await Category.find().sort({ createdAt: -1 });
-    if (categories.length === 0) {
-      await Category.insertMany([
-        { name: 'Electronics', code: 'CAT-ELE', description: 'Electronic items & gadgets', status: 'active' },
-        { name: 'Hardware & Tools', code: 'CAT-HDW', description: 'Hardware equipment and tools', status: 'active' },
-        { name: 'Home & Office Appliances', code: 'CAT-APP', description: 'Electrical appliances', status: 'active' },
-        { name: 'Raw Materials', code: 'CAT-RAW', description: 'Industrial raw materials', status: 'active' },
-        { name: 'Office Supplies', code: 'CAT-SUP', description: 'Consumables & stationery', status: 'active' },
-        { name: 'Spare Parts', code: 'CAT-SPR', description: 'Component spare parts', status: 'active' },
-      ]);
-      categories = await Category.find().sort({ createdAt: -1 });
-    }
+    const categories = await Category.find().sort({ createdAt: -1 });
     res.status(200).json({ status: 'success', data: categories });
   } catch (error) {
     next(error);
@@ -184,21 +173,7 @@ export const deleteCategory = async (req, res, next) => {
 // --- Brand Controllers ---
 export const getBrands = async (req, res, next) => {
   try {
-    let brands = await Brand.find().sort({ createdAt: -1 });
-    if (brands.length === 0) {
-      await Brand.insertMany([
-        { name: 'Samsung', code: 'BR-SAM', description: 'Samsung Electronics', status: 'active' },
-        { name: 'LG Electronics', code: 'BR-LGE', description: 'LG Electronics', status: 'active' },
-        { name: 'Bosch', code: 'BR-BSC', description: 'Bosch Tools & Technology', status: 'active' },
-        { name: 'Tata', code: 'BR-TAT', description: 'Tata Enterprise', status: 'active' },
-        { name: 'HP', code: 'BR-HPP', description: 'Hewlett-Packard', status: 'active' },
-        { name: 'Dell', code: 'BR-DEL', description: 'Dell Inc', status: 'active' },
-        { name: 'Philips', code: 'BR-PHI', description: 'Philips Consumer', status: 'active' },
-        { name: 'Havells', code: 'BR-HAV', description: 'Havells Electricals', status: 'active' },
-        { name: 'Schneider Electric', code: 'BR-SCH', description: 'Schneider Industrial', status: 'active' },
-      ]);
-      brands = await Brand.find().sort({ createdAt: -1 });
-    }
+    const brands = await Brand.find().sort({ createdAt: -1 });
     res.status(200).json({ status: 'success', data: brands });
   } catch (error) {
     next(error);
@@ -237,19 +212,7 @@ export const deleteBrand = async (req, res, next) => {
 // --- Unit Controllers ---
 export const getUnits = async (req, res, next) => {
   try {
-    let units = await Unit.find().sort({ createdAt: -1 });
-    if (units.length === 0) {
-      await Unit.insertMany([
-        { name: 'Pieces', shortName: 'pcs', status: 'active' },
-        { name: 'Kilograms', shortName: 'kg', status: 'active' },
-        { name: 'Meters', shortName: 'm', status: 'active' },
-        { name: 'Boxes', shortName: 'box', status: 'active' },
-        { name: 'Liters', shortName: 'ltr', status: 'active' },
-        { name: 'Sets', shortName: 'set', status: 'active' },
-        { name: 'Packs', shortName: 'pack', status: 'active' },
-      ]);
-      units = await Unit.find().sort({ createdAt: -1 });
-    }
+    const units = await Unit.find().sort({ createdAt: -1 });
     res.status(200).json({ status: 'success', data: units });
   } catch (error) {
     next(error);
@@ -288,15 +251,7 @@ export const deleteUnit = async (req, res, next) => {
 // --- Warehouse Controllers ---
 export const getWarehouses = async (req, res, next) => {
   try {
-    let warehouses = await Warehouse.find().sort({ createdAt: -1 });
-    if (warehouses.length === 0) {
-      await Warehouse.insertMany([
-        { name: 'Main Central Warehouse', code: 'WH-MAIN', city: 'Mumbai', managerName: 'Store Head', status: 'active' },
-        { name: 'Branch Depot A', code: 'WH-DEP-A', city: 'Delhi', managerName: 'Depot Manager', status: 'active' },
-        { name: 'Regional Storage B', code: 'WH-REG-B', city: 'Bangalore', managerName: 'Stock Supervisor', status: 'active' },
-      ]);
-      warehouses = await Warehouse.find().sort({ createdAt: -1 });
-    }
+    const warehouses = await Warehouse.find().sort({ createdAt: -1 });
     res.status(200).json({ status: 'success', data: warehouses });
   } catch (error) {
     next(error);
