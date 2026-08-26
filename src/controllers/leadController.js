@@ -1528,3 +1528,139 @@ export const bulkDeleteLeads = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Bulk reassign leads by lead IDs or by selected sales persons / staff IDs to a target assignee
+// @route   POST /api/v1/leads/bulk-reassign
+// @access  Private (Super Admin & Admin)
+export const bulkReassignLeads = async (req, res, next) => {
+  try {
+    if (!['superAdmin', 'admin'].includes(req.user.role)) {
+      res.status(403);
+      throw new Error('Only Super Admin and Admin are authorized to bulk reassign staff leads');
+    }
+
+    const { targetUserId, leadIds, userIds, status, startDate, endDate } = req.body;
+
+    if (!targetUserId) {
+      res.status(400);
+      throw new Error('Please select a target staff member to reassign leads to');
+    }
+
+    // Verify target user exists
+    let targetUser = await User.findById(targetUserId).select('name email role');
+    let targetModel = 'User';
+    if (!targetUser) {
+      targetUser = await Admin.findById(targetUserId).select('name email role');
+      targetModel = 'Admin';
+    }
+
+    if (!targetUser) {
+      res.status(404);
+      throw new Error('Selected target staff member was not found');
+    }
+
+    const filter = {};
+
+    if (Array.isArray(leadIds) && leadIds.length > 0) {
+      filter._id = { $in: leadIds };
+    } else if (Array.isArray(userIds) && userIds.length > 0) {
+      const hasUnassigned = userIds.includes('unassigned');
+      const validUserIds = userIds.filter((id) => id !== 'unassigned' && id.match(/^[0-9a-fA-F]{24}$/));
+
+      if (hasUnassigned && validUserIds.length > 0) {
+        filter.$or = [
+          { assignedTo: { $in: validUserIds } },
+          { assignedTo: null },
+        ];
+      } else if (hasUnassigned) {
+        filter.assignedTo = null;
+      } else {
+        filter.assignedTo = { $in: validUserIds };
+      }
+
+      if (status && status !== 'all') {
+        filter.status = status;
+      }
+
+      if (startDate || endDate) {
+        filter.createdAt = {};
+        if (startDate) filter.createdAt.$gte = new Date(startDate);
+        if (endDate) {
+          const endD = new Date(endDate);
+          endD.setHours(23, 59, 59, 999);
+          filter.createdAt.$lte = endD;
+        }
+      }
+    } else {
+      res.status(400);
+      throw new Error('Please select at least one lead or staff member to reassign data');
+    }
+
+    const leadsToUpdate = await Lead.find(filter).select('_id assignedTo name phone remarks').lean();
+    if (leadsToUpdate.length === 0) {
+      return res.status(200).json({
+        status: 'success',
+        message: 'No matching leads found to reassign',
+        reassignedCount: 0,
+      });
+    }
+
+    const now = new Date();
+    const assignedByModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
+
+    const bulkOps = leadsToUpdate.map((l) => {
+      const wasReassigned = !!l.assignedTo && l.assignedTo.toString() !== targetUser._id.toString();
+      const remarkNote = wasReassigned
+        ? `[Reassignment] Lead bulk reassigned to ${targetUser.name} (${targetUser.role}) by ${req.user.name}`
+        : `[Assignment] Lead bulk assigned to ${targetUser.name} (${targetUser.role}) by ${req.user.name}`;
+
+      return {
+        updateOne: {
+          filter: { _id: l._id },
+          update: {
+            $set: {
+              assignedTo: targetUser._id,
+              assignedToModel: targetModel,
+              assignedBy: req.user._id,
+              assignedByModel,
+              status: 'assigned',
+              isReassigned: wasReassigned,
+              ...(wasReassigned ? { reassignedAt: now } : {}),
+            },
+            $push: {
+              remarks: {
+                note: remarkNote,
+                addedBy: req.user._id,
+                createdAt: now,
+              },
+            },
+          },
+        },
+      };
+    });
+
+    await Lead.bulkWrite(bulkOps);
+
+    // Send push notification to target user
+    try {
+      await sendNotification(
+        targetUser._id,
+        '📋 Bulk Leads Assigned',
+        `${leadsToUpdate.length} leads have been reassigned to you by ${req.user.name}`,
+        null,
+        null,
+        'general'
+      );
+    } catch (notifErr) {
+      console.error('Notification error in bulkReassignLeads:', notifErr.message);
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: `Successfully reassigned ${leadsToUpdate.length} leads to ${targetUser.name}.`,
+      reassignedCount: leadsToUpdate.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
