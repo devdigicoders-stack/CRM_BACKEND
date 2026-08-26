@@ -1396,8 +1396,7 @@ export const getStaffDataSummary = async (req, res, next) => {
 
     // Find all users who can be assigned leads (sales, crmuser, calling, etc.)
     const users = await User.find({ role: { $in: ['sales', 'crmuser', 'calling', 'user', 'installation'] } })
-      .select('name email phone role active branchId')
-      .populate('branchId', 'name city state')
+      .select('name email phone role active')
       .sort({ name: 1 })
       .lean();
 
