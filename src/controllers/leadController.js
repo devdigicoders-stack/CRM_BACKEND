@@ -184,8 +184,7 @@ export const checkPhoneExists = async (req, res, next) => {
 // @access  Private
 export const getLeads = async (req, res, next) => {
   try {
-    const { search, status, priority, tag, assignedTo, branchId, followUpDate, createdAt, isCallDone, isReassigned, page = 1, limit } = req.query;
-
+    const { search, status, priority, tag, assignedTo, branchId, followUpDate, createdAt, startDate, endDate, fromDate, toDate, isCallDone, isReassigned, page = 1, limit } = req.query;
 
     const query = {};
 
@@ -323,8 +322,23 @@ export const getLeads = async (req, res, next) => {
       };
     }
 
-    // 5) Created At date filter
-    if (createdAt) {
+    // 5) Created At / Date Range filter
+    const effectiveStartDate = startDate || fromDate;
+    const effectiveEndDate = endDate || toDate;
+
+    if (effectiveStartDate || effectiveEndDate) {
+      query.createdAt = {};
+      if (effectiveStartDate) {
+        const start = new Date(effectiveStartDate);
+        start.setHours(0, 0, 0, 0);
+        query.createdAt.$gte = start;
+      }
+      if (effectiveEndDate) {
+        const end = new Date(effectiveEndDate);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
+    } else if (createdAt) {
       // Match exact day range (00:00:00 to 23:59:59)
       const startOfDay = new Date(createdAt);
       startOfDay.setHours(0, 0, 0, 0);
