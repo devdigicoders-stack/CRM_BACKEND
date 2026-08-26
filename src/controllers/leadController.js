@@ -461,7 +461,9 @@ export const updateLead = async (req, res, next) => {
     if (address !== undefined) lead.address = address;
     if (source !== undefined) lead.source = source;
     if (priority) lead.priority = priority;
-    if (tags) lead.tags = tags;
+    if (tags !== undefined) {
+      lead.tags = Array.isArray(tags) ? tags : (typeof tags === 'string' ? tags.split(',').map(t => t.trim()).filter(Boolean) : []);
+    }
     if (isCallDone !== undefined) lead.isCallDone = isCallDone;
     if (status) {
       if (status === 'converted' && lead.status !== 'converted') {
@@ -637,7 +639,13 @@ export const addRemark = async (req, res, next) => {
       lead.visitDate = visitDate ? new Date(visitDate) : null;
     }
     if (tags) {
-      lead.tags = tags;
+      const newTags = Array.isArray(tags) ? tags : (typeof tags === 'string' ? tags.split(',').map(t => t.trim()).filter(Boolean) : []);
+      if (newTags.length > 0) {
+        const currentTags = Array.isArray(lead.tags) ? lead.tags : [];
+        const existingLower = new Set(currentTags.map(t => t.toLowerCase().trim()));
+        const toAdd = newTags.filter(t => !existingLower.has(t.toLowerCase().trim()));
+        lead.tags = [...currentTags, ...toAdd];
+      }
     }
     if (priority) {
       lead.priority = priority;
