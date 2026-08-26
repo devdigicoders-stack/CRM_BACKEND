@@ -246,6 +246,10 @@ const leadSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    reassignedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -258,6 +262,7 @@ leadSchema.index({ name: 'text', phone: 'text', email: 'text' });
 // Performance optimization indexes
 leadSchema.index({ assignedTo: 1, status: 1 });
 leadSchema.index({ assignedTo: 1, isReassigned: 1 });
+leadSchema.index({ assignedTo: 1, isReassigned: 1, reassignedAt: -1 });
 leadSchema.index({ followUpDate: 1 });
 leadSchema.index({ createdAt: -1 });
 leadSchema.index({ isCallDone: 1, assignedTo: 1 });

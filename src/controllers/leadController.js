@@ -322,21 +322,37 @@ export const getLeads = async (req, res, next) => {
       };
     }
 
-    // 5) Created At / Date Range filter
+    // 5) Created At / Reassigned At / Date Range filter
     const effectiveStartDate = startDate || fromDate;
     const effectiveEndDate = endDate || toDate;
+    const isReassignedFilter = query.isReassigned === true;
 
     if (effectiveStartDate || effectiveEndDate) {
-      query.createdAt = {};
+      const dateCondition = {};
       if (effectiveStartDate) {
         const start = new Date(effectiveStartDate);
         start.setHours(0, 0, 0, 0);
-        query.createdAt.$gte = start;
+        dateCondition.$gte = start;
       }
       if (effectiveEndDate) {
         const end = new Date(effectiveEndDate);
         end.setHours(23, 59, 59, 999);
-        query.createdAt.$lte = end;
+        dateCondition.$lte = end;
+      }
+
+      if (isReassignedFilter) {
+        const reassignedDateOr = [
+          { reassignedAt: dateCondition },
+          { reassignedAt: null, updatedAt: dateCondition },
+        ];
+        if (query.$or) {
+          if (!query.$and) query.$and = [];
+          query.$and.push({ $or: reassignedDateOr });
+        } else {
+          query.$or = reassignedDateOr;
+        }
+      } else {
+        query.createdAt = dateCondition;
       }
     } else if (createdAt) {
       // Match exact day range (00:00:00 to 23:59:59)
@@ -346,10 +362,25 @@ export const getLeads = async (req, res, next) => {
       const endOfDay = new Date(createdAt);
       endOfDay.setHours(23, 59, 59, 999);
 
-      query.createdAt = {
+      const dateCondition = {
         $gte: startOfDay,
         $lte: endOfDay,
       };
+
+      if (isReassignedFilter) {
+        const reassignedDateOr = [
+          { reassignedAt: dateCondition },
+          { reassignedAt: null, updatedAt: dateCondition },
+        ];
+        if (query.$or) {
+          if (!query.$and) query.$and = [];
+          query.$and.push({ $or: reassignedDateOr });
+        } else {
+          query.$or = reassignedDateOr;
+        }
+      } else {
+        query.createdAt = dateCondition;
+      }
     }
 
     const pageNum = parseInt(page, 10) || 1;
@@ -360,12 +391,16 @@ export const getLeads = async (req, res, next) => {
     const limitNum = !isNaN(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100;
     const skipNum = (pageNum - 1) * limitNum;
 
-    // Execute query sorted by creation date
+    // Execute query sorted by date (reassigned leads sorted by reassignedAt / updatedAt)
+    const sortField = isReassignedFilter
+      ? { reassignedAt: -1, updatedAt: -1, createdAt: -1 }
+      : { createdAt: -1 };
+
     const leads = await Lead.find(query)
       .populate('assignedTo', 'name email role')
       .populate('createdBy', 'name email')
       .populate('assignedBy', 'name email role')
-      .sort({ createdAt: -1 })
+      .sort(sortField)
       .skip(skipNum)
       .limit(limitNum)
       .lean();
@@ -564,6 +599,9 @@ export const assignLead = async (req, res, next) => {
     lead.assignedByModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
     lead.status = 'assigned';
     lead.isReassigned = wasReassigned;
+    if (wasReassigned) {
+      lead.reassignedAt = new Date();
+    }
 
     // If assigning to installation role, set installation fields too
     if (targetUser.role === 'installation') {
