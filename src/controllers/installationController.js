@@ -82,9 +82,20 @@ export const getInstallationDashboard = async (req, res, next) => {
     const completed = await Lead.countDocuments({ ...query, installationStatus: 'completed' });
     const issuesReported = await Lead.countDocuments({ ...query, installationIssueReported: true });
 
+    const overdueDate = new Date(Date.now() - 72 * 60 * 60 * 1000);
+    const overdue = await Lead.countDocuments({
+      ...query,
+      installationStatus: { $ne: 'completed' },
+      $or: [
+        { installationAssignedAt: { $lt: overdueDate } },
+        { installationAssignedAt: { $exists: false }, createdAt: { $lt: overdueDate } },
+        { installationAssignedAt: null, createdAt: { $lt: overdueDate } }
+      ]
+    });
+
     res.status(200).json({
       status: 'success',
-      data: { totalAssigned, inProgress, completed, issuesReported }
+      data: { totalAssigned, inProgress, completed, issuesReported, overdue }
     });
   } catch (error) {
     next(error);
@@ -96,7 +107,7 @@ export const getInstallationDashboard = async (req, res, next) => {
 // @access  Private (Admins and Installers only)
 export const getAssignedInstallationLeads = async (req, res, next) => {
   try {
-    const { search, status, issueReported, page = 1, limit = 20 } = req.query;
+    const { search, status, issueReported, overdue, page = 1, limit = 20 } = req.query;
 
     const query = { transferredToInstallation: true };
 
@@ -143,6 +154,21 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
         query.installationIssueReported = true;
         query.installationIssueType = 'delay';
       }
+    }
+
+    if (overdue === 'true') {
+      const overdueDate = new Date(Date.now() - 72 * 60 * 60 * 1000);
+      query.installationStatus = { $ne: 'completed' };
+      if (!query.$and) {
+        query.$and = [];
+      }
+      query.$and.push({
+        $or: [
+          { installationAssignedAt: { $lt: overdueDate } },
+          { installationAssignedAt: { $exists: false }, createdAt: { $lt: overdueDate } },
+          { installationAssignedAt: null, createdAt: { $lt: overdueDate } }
+        ]
+      });
     }
 
     const pageNum = parseInt(page, 10);
@@ -217,6 +243,7 @@ export const assignInstallationRep = async (req, res, next) => {
           installationRep: installerObjectId,
           installationStatus: 'assigned',
           transferredToInstallation: true,
+          installationAssignedAt: new Date(),
         },
         $push: {
           remarks: {

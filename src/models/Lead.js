@@ -208,6 +208,9 @@ const leadSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
+    installationAssignedAt: {
+      type: Date,
+    },
     installationStatus: {
       type: String,
       enum: ['assigned', 'in_progress', 'in_transit', 'completed'],
