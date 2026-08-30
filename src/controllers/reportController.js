@@ -36,11 +36,25 @@ const getFilterQuery = async (req) => {
   }
 
   if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { phone: { $regex: search, $options: 'i' } },
-      { email: { $regex: search, $options: 'i' } },
+    const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const cleanPhoneSearch = search.replace(/\D/g, '');
+    
+    const orConditions = [
+      { name: { $regex: escapedSearch, $options: 'i' } },
+      { phone: { $regex: escapedSearch, $options: 'i' } },
+      { email: { $regex: escapedSearch, $options: 'i' } }
     ];
+
+    if (cleanPhoneSearch.length >= 10) {
+      const last10 = cleanPhoneSearch.slice(-10);
+      const flexibleRegex = last10.split('').join('\\D*');
+      orConditions.push({ phone: { $regex: flexibleRegex, $options: 'i' } });
+    } else if (cleanPhoneSearch.length > 0) {
+      const flexibleRegex = cleanPhoneSearch.split('').join('\\D*');
+      orConditions.push({ phone: { $regex: flexibleRegex, $options: 'i' } });
+    }
+
+    query.$or = orConditions;
   }
 
   if (status) query.status = status;
