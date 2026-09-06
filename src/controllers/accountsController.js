@@ -8,6 +8,7 @@ import { Product } from '../models/Product.js';
 import { StockMovement } from '../models/StockMovement.js';
 import { Notification } from '../models/Notification.js';
 import { sendPushNotification } from '../config/firebase.js';
+import { notifyUser, notifyRoles, notifySuperAdminAndAdmins } from '../services/notificationService.js';
 
 const sendNotification = async (recipientId, title, message, leadId) => {
   try {
@@ -165,6 +166,17 @@ export const verifySale = async (req, res, next) => {
         `Lead "${lead.name}" ki sale ${verificationStatus === 'verified' ? 'approve' : 'reject'} ho gayi. Remarks: ${remarks || 'None'}`,
         lead._id
       );
+    }
+
+    // Notify SuperAdmin & Branch Managers on sale verification
+    if (verificationStatus === 'verified') {
+      notifySuperAdminAndAdmins(
+        '✅ Payment & Sale Verified',
+        `Lead "${lead.name}" (Deal: ₹${lead.dealValue || lead.totalAmount || ''}) accounts team dwaara verify kar di gayi hai.`,
+        lead._id,
+        { leadId: lead._id.toString(), verificationStatus },
+        'payment_alert'
+      ).catch(err => console.error(err));
     }
 
     res.status(200).json({ status: 'success', data: { lead: formatLeadWithIntegrations(updatedLead) } });

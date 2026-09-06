@@ -23,7 +23,18 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['missed_followup', 'missed_meeting', 'general', 'bulk_upload'],
+      enum: [
+        'missed_followup',
+        'missed_meeting',
+        'general',
+        'bulk_upload',
+        'followup_reminder',
+        'stock_alert',
+        'lead_sla',
+        'demo_alert',
+        'payment_alert',
+        'daily_summary'
+      ],
       default: 'general',
     },
     metadata: {

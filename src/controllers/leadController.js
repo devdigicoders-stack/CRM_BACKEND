@@ -10,6 +10,7 @@ import { Notification } from '../models/Notification.js';
 import { sendPushNotification } from '../config/firebase.js';
 import { Product } from '../models/Product.js';
 import { StockMovement } from '../models/StockMovement.js';
+import { notifyUser, notifyRoles, notifySuperAdminAndAdmins } from '../services/notificationService.js';
 
 const sendNotification = async (recipientId, title, message, leadId, metadata = null, type = 'general') => {
   try {
@@ -109,7 +110,25 @@ export const createLead = async (req, res, next) => {
 
     // Notify assignee if lead is directly assigned on creation
     if (finalAssignedTo) {
-      await sendNotification(finalAssignedTo, '📋 New Lead Assigned', `Lead "${lead.name}" (${lead.phone}) aapko assign ki gayi hai by ${req.user.name}`, lead._id);
+      await notifyUser(
+        finalAssignedTo,
+        '📋 New Lead Assigned',
+        `Lead "${lead.name}" (${lead.phone}) aapko assign ki gayi hai by ${req.user.name}`,
+        lead._id,
+        { leadId: lead._id.toString() },
+        'general'
+      );
+    }
+
+    // High Priority / Hot Lead Notification to SuperAdmin and Branch Managers
+    if (lead.priority === 'high' || (Array.isArray(lead.tags) && lead.tags.some(t => t.toLowerCase().includes('hot')))) {
+      await notifySuperAdminAndAdmins(
+        '🔥 High Priority / Hot Lead Alert',
+        `Nayi High-Priority Lead "${lead.name}" (${lead.phone}) create hui hai. Priority: ${lead.priority || 'High'}`,
+        lead._id,
+        { leadId: lead._id.toString(), priority: lead.priority },
+        'lead_sla'
+      );
     }
 
     res.status(201).json({
@@ -674,7 +693,31 @@ export const addRemark = async (req, res, next) => {
       lead.followUpDate = followUpDate ? new Date(followUpDate) : null;
     }
     if (visitDate !== undefined) {
+      const prevVisit = lead.visitDate;
       lead.visitDate = visitDate ? new Date(visitDate) : null;
+      if (lead.visitDate && (!prevVisit || new Date(prevVisit).getTime() !== lead.visitDate.getTime())) {
+        // Trigger Demo / Visit scheduled alert to Installation & Sales teams
+        const formattedDate = new Date(lead.visitDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+        notifyRoles(
+          ['superAdmin', 'admin', 'installation'],
+          '📅 Demo / Customer Visit Scheduled',
+          `Lead "${lead.name}" (${lead.phone}) ke liye Demo/Visit schedule ki gayi hai: ${formattedDate}`,
+          lead._id,
+          { leadId: lead._id.toString(), visitDate: lead.visitDate.toISOString() },
+          'demo_alert'
+        ).catch(err => console.error('Demo notify error:', err.message));
+
+        if (lead.assignedTo) {
+          notifyUser(
+            lead.assignedTo,
+            '📅 Demo / Visit Scheduled',
+            `Lead "${lead.name}" ke liye Visit/Demo schedule ho gaya hai on ${formattedDate}.`,
+            lead._id,
+            { leadId: lead._id.toString(), visitDate: lead.visitDate.toISOString() },
+            'demo_alert'
+          ).catch(err => console.error('Demo sales notify error:', err.message));
+        }
+      }
     }
     if (tags) {
       const newTags = Array.isArray(tags) ? tags : (typeof tags === 'string' ? tags.split(',').map(t => t.trim()).filter(Boolean) : []);
@@ -713,6 +756,17 @@ export const addRemark = async (req, res, next) => {
       }
       if (['converted', 'closed', 'not_interested'].includes(status)) {
         lead.followUpDate = null;
+      }
+      if (status) {
+        if (['demo_done', 'demo_completed'].includes(status.toLowerCase())) {
+          notifySuperAdminAndAdmins(
+            '🎯 Demo Completed',
+            `Lead "${lead.name}" (${lead.phone}) ka Demo complete record kiya gaya hai. Status: ${status}`,
+            lead._id,
+            { leadId: lead._id.toString(), status },
+            'demo_alert'
+          ).catch(err => console.error(err));
+        }
       }
       lead.status = status;
     }

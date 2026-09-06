@@ -6,6 +6,7 @@ import { Product } from '../models/Product.js';
 import { StockMovement } from '../models/StockMovement.js';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
+import { notifyRoles } from '../services/notificationService.js';
 import XLSX from 'xlsx';
 
 // --- Default Data Seeder ---
@@ -595,6 +596,34 @@ export const recordStockMovement = async (req, res, next) => {
     }
 
     await product.save();
+
+    // Trigger Notifications for Fresh Stock or Low Stock Alert
+    try {
+      if (['stock_in', 'purchase', 'opening_stock'].includes(transactionType)) {
+        notifyRoles(
+          ['sales', 'calling'],
+          '📦 Fresh Stock Added',
+          `🎉 New Stock: ${qty} units of "${product.name}" added to inventory (${product.currentStock} units available).`,
+          null,
+          { productId: product._id.toString() },
+          'stock_alert'
+        ).catch(err => console.error('[StockNotification Error]:', err.message));
+      } else if (['stock_out', 'adjustment'].includes(transactionType)) {
+        const threshold = product.minStockAlert !== undefined ? product.minStockAlert : 5;
+        if (product.currentStock <= threshold) {
+          notifyRoles(
+            ['stock', 'accountant', 'superAdmin'],
+            '⚠️ Low Stock Alert',
+            `⚠️ Low Stock Warning: "${product.name}" has only ${product.currentStock} unit${product.currentStock === 1 ? '' : 's'} remaining in stock!`,
+            null,
+            { productId: product._id.toString(), currentStock: product.currentStock },
+            'stock_alert'
+          ).catch(err => console.error('[StockNotification Error]:', err.message));
+        }
+      }
+    } catch (notifErr) {
+      console.error('[StockNotification Error]:', notifErr.message);
+    }
 
     let resolvedSalesPersonName = rawSalesPersonName;
     if (salesPerson && !resolvedSalesPersonName) {
