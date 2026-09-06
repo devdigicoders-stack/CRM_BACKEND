@@ -1,4 +1,5 @@
-import admin from 'firebase-admin';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
 
 const firebaseConfigured = !!(
   process.env.FIREBASE_PROJECT_ID &&
@@ -6,17 +7,33 @@ const firebaseConfigured = !!(
   process.env.FIREBASE_PRIVATE_KEY
 );
 
+let app = null;
+
 if (firebaseConfigured) {
   try {
-    if (!admin.apps.length) {
-      admin.initializeApp({
-        credential: admin.credential.cert({
+    if (getApps().length === 0) {
+      let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+      if (privateKey) {
+        if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+          try {
+            privateKey = JSON.parse(privateKey);
+          } catch {
+            privateKey = privateKey.slice(1, -1);
+          }
+        }
+        privateKey = privateKey.replace(/\\n/g, '\n');
+      }
+
+      app = initializeApp({
+        credential: cert({
           projectId: process.env.FIREBASE_PROJECT_ID,
           clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+          privateKey,
         }),
       });
       console.log('✅ Firebase Admin initialized successfully');
+    } else {
+      app = getApps()[0];
     }
   } catch (err) {
     console.error('[Firebase] Init failed:', err.message);
@@ -26,16 +43,23 @@ if (firebaseConfigured) {
 }
 
 export const sendPushNotification = async (fcmToken, title, body, data = {}) => {
-  if (!admin.apps.length) {
+  if (getApps().length === 0) {
     console.warn('[FCM] Firebase not initialized, skipping push.');
     return;
   }
   try {
     console.log(`[FCM] Sending push to token: ${fcmToken?.substring(0, 20)}...`);
-    const response = await admin.messaging().send({
+    const stringData = {};
+    if (data && typeof data === 'object') {
+      Object.keys(data).forEach((key) => {
+        stringData[key] = String(data[key]);
+      });
+    }
+
+    const response = await getMessaging().send({
       token: fcmToken,
       notification: { title, body },
-      data,
+      data: stringData,
     });
     console.log('[FCM] ✅ Push sent successfully. MessageId:', response);
   } catch (err) {
@@ -43,4 +67,4 @@ export const sendPushNotification = async (fcmToken, title, body, data = {}) => 
   }
 };
 
-export default admin;
+export default app;
