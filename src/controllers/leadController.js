@@ -208,7 +208,7 @@ export const getLeads = async (req, res, next) => {
     const query = {};
 
     // 1) Security constraint
-    if (['superAdmin', 'admin'].includes(req.user.role)) {
+    if (['superAdmin', 'admin', 'crmuser'].includes(req.user.role)) {
       if (branchId) {
         const branch = await Branch.findById(branchId).select('branchManager assignedUsers');
         if (branch) {
@@ -236,6 +236,8 @@ export const getLeads = async (req, res, next) => {
               { createdBy: { $in: branchUserIds } }
             ];
           }
+        } else {
+          query._id = { $in: [] };
         }
       } else if (assignedTo) {
         if (assignedTo === 'unassigned') {
@@ -265,12 +267,6 @@ export const getLeads = async (req, res, next) => {
           { createdBy: { $in: branchUserIds } }
         ];
       }
-    } else if (req.user.role === 'crmuser') {
-      // crmuser can see leads they created OR leads assigned to them
-      query.$or = [
-        { createdBy: req.user._id },
-        { assignedTo: req.user._id },
-      ];
     } else {
       query.assignedTo = req.user._id;
     }
