@@ -85,7 +85,7 @@ export const getInstallationDashboard = async (req, res, next) => {
     const overdueDate = new Date(Date.now() - 72 * 60 * 60 * 1000);
     const overdue = await Lead.countDocuments({
       ...query,
-      installationStatus: { $ne: 'completed' },
+      installationStatus: 'in_progress',
       $or: [
         { installationAssignedAt: { $lt: overdueDate } },
         { installationAssignedAt: { $exists: false }, createdAt: { $lt: overdueDate } },
@@ -158,7 +158,7 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
 
     if (overdue === 'true') {
       const overdueDate = new Date(Date.now() - 72 * 60 * 60 * 1000);
-      query.installationStatus = { $ne: 'completed' };
+      query.installationStatus = 'in_progress';
       if (!query.$and) {
         query.$and = [];
       }
