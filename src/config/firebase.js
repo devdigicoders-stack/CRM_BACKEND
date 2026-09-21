@@ -1,3 +1,5 @@
+import dotenv from 'dotenv';
+dotenv.config();
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 
@@ -47,8 +49,11 @@ export const sendPushNotification = async (fcmToken, title, body, data = {}) => 
     console.warn('[FCM] Firebase not initialized, skipping push.');
     return;
   }
+  if (!fcmToken || typeof fcmToken !== 'string') {
+    return;
+  }
   try {
-    console.log(`[FCM] Sending push to token: ${fcmToken?.substring(0, 20)}...`);
+    console.log(`[FCM] Sending push to token: ${fcmToken.substring(0, 20)}...`);
     const stringData = {};
     if (data && typeof data === 'object') {
       Object.keys(data).forEach((key) => {
@@ -60,6 +65,24 @@ export const sendPushNotification = async (fcmToken, title, body, data = {}) => 
       token: fcmToken,
       notification: { title, body },
       data: stringData,
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          priority: 'high',
+          channelId: 'high_importance_channel',
+          defaultSound: true,
+          defaultVibrateTimings: true,
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            contentAvailable: true,
+          },
+        },
+      },
     });
     console.log('[FCM] ✅ Push sent successfully. MessageId:', response);
   } catch (err) {
