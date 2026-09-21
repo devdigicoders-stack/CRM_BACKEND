@@ -59,8 +59,103 @@ const leadSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['new', 'assigned', 'interested', 'in_process', 'not_interested', 'converted', 'closed', 'call_done'],
+      enum: [
+        'new', 'unscreened', 'screening_in_progress', 'assigned', 'interested', 
+        'in_process', 'callback', 'invalid_number', 'not_interested', 'qualified', 
+        'disqualified', 'assigned_to_branch', 'converted', 'closed', 'call_done'
+      ],
       default: 'new',
+    },
+    // Central Telecaller & Branch Dual Ownership
+    originTelecaller: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    assignedBranch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Branch',
+      default: null,
+    },
+    branchOwner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    // Structured Address & Verification
+    city: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    state: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    pinCode: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    latitude: {
+      type: Number,
+      default: null,
+    },
+    longitude: {
+      type: Number,
+      default: null,
+    },
+    addressVerified: {
+      type: Boolean,
+      default: false,
+    },
+    addressVerifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    addressVerifiedAt: {
+      type: Date,
+    },
+    // Lock System & Reassignment Limit
+    isLocked: {
+      type: Boolean,
+      default: false,
+    },
+    reassignmentCount: {
+      type: Number,
+      default: 0,
+    },
+    reassignmentReason: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    // Incentives
+    telecallerIncentive: {
+      type: Number,
+      default: 0,
+    },
+    branchIncentive: {
+      type: Number,
+      default: 0,
+    },
+    incentiveStatus: {
+      type: String,
+      enum: ['pending', 'calculated', 'paid'],
+      default: 'pending',
+    },
+    isCallDone: {
+      type: Boolean,
+      default: false,
+    },
+    isReassigned: {
+      type: Boolean,
+      default: false,
+    },
+    reassignedAt: {
+      type: Date,
+      default: null,
     },
     priority: {
       type: String,

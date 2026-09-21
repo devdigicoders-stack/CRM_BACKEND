@@ -26,6 +26,35 @@ const branchSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
+    city: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    state: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    address: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    pincodes: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    latitude: {
+      type: Number,
+      default: null,
+    },
+    longitude: {
+      type: Number,
+      default: null,
+    },
     active: {
       type: Boolean,
       default: true,

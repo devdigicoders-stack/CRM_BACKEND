@@ -11,6 +11,7 @@ import { sendPushNotification } from '../config/firebase.js';
 import { Product } from '../models/Product.js';
 import { StockMovement } from '../models/StockMovement.js';
 import { notifyUser, notifyRoles, notifySuperAdminAndAdmins } from '../services/notificationService.js';
+import { suggestNearestBranches } from '../utils/branchHelper.js';
 
 const sendNotification = async (recipientId, title, message, leadId, metadata = null, type = 'general') => {
   try {
@@ -1714,3 +1715,220 @@ export const bulkReassignLeads = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get Telecaller Lead Screening Queue (Unscreened / New raw leads)
+// @route   GET /api/v1/leads/screening-queue
+// @access  Private (Calling / Telecaller / Admin)
+export const getScreeningQueue = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, search, source } = req.query;
+    const query = {
+      status: { $in: ['new', 'unscreened', 'screening_in_progress'] },
+    };
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { city: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    if (source) {
+      query.source = source;
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const leads = await Lead.find(query)
+      .populate('createdBy', 'name email')
+      .populate('originTelecaller', 'name email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Lead.countDocuments(query);
+
+    res.status(200).json({
+      status: 'success',
+      results: leads.length,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / parseInt(limit)),
+      data: { leads },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Suggest nearest branches based on PIN code / City / Lat / Lng
+// @route   POST /api/v1/leads/:id/suggest-branch
+// @access  Private
+export const suggestBranchForLead = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { pinCode, city, state, latitude, longitude } = req.body;
+
+    const lead = await Lead.findById(id);
+    if (!lead) {
+      res.status(404);
+      throw new Error('Lead not found');
+    }
+
+    const searchPin = pinCode || lead.pinCode;
+    const searchCity = city || lead.city;
+    const searchState = state || lead.state;
+    const searchLat = latitude || lead.latitude;
+    const searchLng = longitude || lead.longitude;
+
+    const suggestions = await suggestNearestBranches({
+      pinCode: searchPin,
+      city: searchCity,
+      state: searchState,
+      latitude: searchLat,
+      longitude: searchLng,
+    });
+
+    res.status(200).json({
+      status: 'success',
+      leadId: id,
+      suggestions,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Qualify lead, verify address & assign to Branch with Handover Notes
+// @route   POST /api/v1/leads/:id/qualify-and-assign
+// @access  Private
+export const qualifyAndAssignBranch = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { branchId, branchUserId, city, state, pinCode, latitude, longitude, handoverRemark } = req.body;
+
+    const lead = await Lead.findById(id);
+    if (!lead) {
+      res.status(404);
+      throw new Error('Lead not found');
+    }
+
+    // Check Lock System (Max 1 correction for non-admin)
+    const isSuperAdmin = ['superAdmin', 'admin'].includes(req.user.role);
+    if (lead.isLocked && !isSuperAdmin) {
+      res.status(403);
+      throw new Error('Lead is locked after maximum allowed reassignments. Only Super Admin can modify.');
+    }
+
+    const targetBranch = await Branch.findById(branchId);
+    if (!targetBranch) {
+      res.status(404);
+      throw new Error('Target Branch not found');
+    }
+
+    // Set permanent Origin Telecaller if not already set
+    if (!lead.originTelecaller) {
+      lead.originTelecaller = req.user._id;
+    }
+
+    // Update structured location data
+    if (city) lead.city = city;
+    if (state) lead.state = state;
+    if (pinCode) lead.pinCode = pinCode;
+    if (latitude) lead.latitude = latitude;
+    if (longitude) lead.longitude = longitude;
+    lead.addressVerified = true;
+    lead.addressVerifiedBy = req.user._id;
+    lead.addressVerifiedAt = new Date();
+
+    // Assign Branch & Branch Executive/Manager
+    lead.assignedBranch = branchId;
+    if (branchUserId) {
+      lead.branchOwner = branchUserId;
+      lead.assignedTo = branchUserId;
+      lead.assignedToModel = 'User';
+    }
+
+    lead.status = 'assigned_to_branch';
+
+    // Increment reassignment count & lock if >= 1
+    lead.reassignmentCount = (lead.reassignmentCount || 0) + 1;
+    if (lead.reassignmentCount >= 1) {
+      lead.isLocked = true;
+    }
+
+    // Append Handover Remark
+    const remarkNote = `[QUALIFIED & HANDED OVER TO ${targetBranch.name.toUpperCase()}] ${handoverRemark || 'Lead verified and routed to branch.'}`;
+    lead.remarks.push({
+      note: remarkNote,
+      addedBy: req.user._id,
+      createdAt: new Date(),
+    });
+
+    await lead.save();
+
+    // Send notification to branch users
+    if (branchUserId) {
+      await sendNotification(
+        branchUserId,
+        '📍 New Qualified Lead Assigned',
+        `Lead ${lead.name || lead.phone} has been assigned to your branch by Telecaller ${req.user.name}`,
+        lead._id
+      );
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: `Lead successfully qualified and assigned to ${targetBranch.name}`,
+      data: { lead },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Log Call Action, Remarks & Next Follow-up Date for Telecaller
+// @route   POST /api/v1/leads/:id/log-call
+// @access  Private
+export const logTelecallerCall = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { callStatus, note, followUpDate } = req.body;
+
+    const lead = await Lead.findById(id);
+    if (!lead) {
+      res.status(404);
+      throw new Error('Lead not found');
+    }
+
+    if (callStatus) {
+      lead.status = callStatus;
+    }
+    lead.isCallDone = true;
+
+    if (followUpDate) {
+      lead.followUpDate = new Date(followUpDate);
+    }
+
+    if (note) {
+      lead.remarks.push({
+        note: `[TELECALLER CALL - Status: ${callStatus || 'Call Done'}] ${note}`,
+        addedBy: req.user._id,
+        createdAt: new Date(),
+        followUpDate: followUpDate ? new Date(followUpDate) : null,
+      });
+    }
+
+    await lead.save();
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Call log saved successfully',
+      data: { lead },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

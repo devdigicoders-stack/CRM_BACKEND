@@ -32,6 +32,12 @@ apiRouter.put('/profile', protect, authController.uploadProfilePicMiddleware, au
 apiRouter.get('/users/sales-list', protect, userController.getSalesUsers);
 apiRouter.post('/users/fcm-token', protect, userController.registerFcmToken);
 
+// --- Telecaller / Lead Screening Routes ---
+apiRouter.get('/leads/screening-queue', protect, leadController.getScreeningQueue);
+apiRouter.post('/leads/:id/suggest-branch', protect, leadController.suggestBranchForLead);
+apiRouter.post('/leads/:id/qualify-and-assign', protect, leadController.qualifyAndAssignBranch);
+apiRouter.post('/leads/:id/log-call', protect, leadController.logTelecallerCall);
+
 // --- Lead Routes ---
 apiRouter.get('/leads/staff-data-summary', protect, restrictTo('superAdmin', 'admin'), leadController.getStaffDataSummary);
 apiRouter.post('/leads/bulk-delete', protect, restrictTo('superAdmin'), leadController.bulkDeleteLeads);
