@@ -1054,16 +1054,40 @@ export const confirmSale = async (req, res, next) => {
       throw new Error('Payment screenshot is required');
     }
 
-    // Validate product if a productId is linked
-    if (productId) {
-      const product = await Product.findById(productId);
-      if (!product) {
-        res.status(400);
-        throw new Error('Product not found in stock catalog');
+    // Parse multi-product items if provided
+    let itemsArray = [];
+    if (req.body.items) {
+      try {
+        itemsArray = typeof req.body.items === 'string' ? JSON.parse(req.body.items) : req.body.items;
+      } catch (e) {
+        itemsArray = [];
       }
-      const qty = Number(productQuantity) || 1;
-      lead.productId = productId;
-      lead.productQuantity = qty;
+    }
+
+    if (Array.isArray(itemsArray) && itemsArray.length > 0) {
+      lead.items = itemsArray.map(item => ({
+        productId: item.productId || null,
+        name: item.name || item.productName || '',
+        quantity: Number(item.quantity) || 1,
+        price: Number(item.price) || 0,
+      }));
+      if (itemsArray[0].productId) {
+        lead.productId = itemsArray[0].productId;
+      }
+      lead.productQuantity = itemsArray.reduce((acc, curr) => acc + (Number(curr.quantity) || 1), 0);
+    } else if (productId) {
+      const product = await Product.findById(productId);
+      if (product) {
+        const qty = Number(productQuantity) || 1;
+        lead.productId = productId;
+        lead.productQuantity = qty;
+        lead.items = [{
+          productId: product._id,
+          name: product.name,
+          quantity: qty,
+          price: product.sellingPrice || 0,
+        }];
+      }
     }
 
     lead.productDetails = productDetails;
