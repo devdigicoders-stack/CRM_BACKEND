@@ -46,7 +46,13 @@ export const protect = async (req, res, next) => {
       throw new Error('This user account has been deactivated');
     }
 
-    // 4) Attach user to request object
+    // 4) Check if user changed password after the token was issued
+    if (currentUser.changedPasswordAfter && currentUser.changedPasswordAfter(decoded.iat)) {
+      res.status(401);
+      throw new Error('User recently changed password! Please log in again.');
+    }
+
+    // 5) Attach user to request object
     req.user = currentUser;
     next();
   } catch (error) {
