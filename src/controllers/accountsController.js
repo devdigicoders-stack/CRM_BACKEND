@@ -81,7 +81,7 @@ export const getAccountDashboard = async (req, res, next) => {
 
 export const getClosedWonLeads = async (req, res, next) => {
   try {
-    const { search, verificationStatus, paymentStatus, page = 1, limit = 20 } = req.query;
+    const { search, verificationStatus, paymentStatus, assignedTo, startDate, endDate, page = 1, limit = 20 } = req.query;
     
     // Base query logic: if rejected, it's no longer transferredToAccounts
     const query = {};
@@ -93,6 +93,24 @@ export const getClosedWonLeads = async (req, res, next) => {
       if (verificationStatus) query.verificationStatus = verificationStatus;
     }
 
+    if (assignedTo && assignedTo !== 'all') {
+      query.assignedTo = assignedTo;
+    }
+
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        query.createdAt.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
+    }
+
     if (search) {
       const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const cleanPhoneSearch = search.replace(/\D/g, '');
@@ -100,7 +118,8 @@ export const getClosedWonLeads = async (req, res, next) => {
       const orConditions = [
         { name: { $regex: escapedSearch, $options: 'i' } },
         { phone: { $regex: escapedSearch, $options: 'i' } },
-        { email: { $regex: escapedSearch, $options: 'i' } }
+        { email: { $regex: escapedSearch, $options: 'i' } },
+        { productDetails: { $regex: escapedSearch, $options: 'i' } }
       ];
 
       if (cleanPhoneSearch.length >= 10) {
@@ -120,9 +139,10 @@ export const getClosedWonLeads = async (req, res, next) => {
     const skipNum = (pageNum - 1) * limitNum;
     const total = await Lead.countDocuments(query);
     const leads = await Lead.find(query)
-      .populate('assignedTo', 'name email role')
+      .populate('assignedTo', 'name email role phone')
       .populate('remarks.addedBy', 'name email role')
       .populate('productId')
+      .populate('items.productId')
       .sort({ createdAt: -1 })
       .skip(skipNum)
       .limit(limitNum)
