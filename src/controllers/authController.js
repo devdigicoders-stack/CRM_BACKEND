@@ -226,7 +226,10 @@ export const saveFcmToken = async (req, res, next) => {
     const isAdmin = ['superAdmin', 'admin', 'branchManager'].includes(req.user.role);
     const Model = isAdmin ? Admin : User;
 
-    await Model.findByIdAndUpdate(req.user._id, { fcmToken });
+    await Model.findByIdAndUpdate(req.user._id, {
+      fcmToken,
+      $addToSet: { fcmTokens: fcmToken },
+    });
 
     res.status(200).json({ status: 'success', message: 'FCM token saved' });
   } catch (error) {

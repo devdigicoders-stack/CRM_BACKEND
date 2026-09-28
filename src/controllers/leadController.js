@@ -14,17 +14,7 @@ import { notifyUser, notifyRoles, notifySuperAdminAndAdmins } from '../services/
 import { suggestNearestBranches } from '../utils/branchHelper.js';
 
 const sendNotification = async (recipientId, title, message, leadId, metadata = null, type = 'general') => {
-  try {
-    const payload = { title, message, recipient: recipientId, type };
-    if (leadId) payload.lead = leadId;
-    if (metadata) payload.metadata = metadata;
-    await Notification.create(payload);
-    let recipient = await User.findById(recipientId).select('fcmToken').lean();
-    if (!recipient) recipient = await Admin.findById(recipientId).select('fcmToken').lean();
-    if (recipient?.fcmToken) await sendPushNotification(recipient.fcmToken, title, message, { leadId: leadId?.toString() });
-  } catch (err) {
-    console.error('Notification error:', err.message);
-  }
+  return notifyUser(recipientId, title, message, leadId, metadata, type);
 };
 
 // Helper to format lead response with helper integration links
