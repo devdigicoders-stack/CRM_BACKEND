@@ -596,6 +596,7 @@ export const assignLead = async (req, res, next) => {
 
     // Check if this is a reassignment (already had an assignee)
     const wasReassigned = !!lead.assignedTo && lead.assignedTo.toString() !== userId;
+    const previousAssigneeId = wasReassigned ? lead.assignedTo : null;
     const previousAssigneeName = wasReassigned ? (await User.findById(lead.assignedTo).select('name').lean())?.name || 'Unknown' : null;
 
     // Update assignment
@@ -627,8 +628,33 @@ export const assignLead = async (req, res, next) => {
 
     const updatedLead = await lead.save();
 
-    // Send assignment notification
-    await sendNotification(userId, '📋 New Lead Assigned', `Lead "${updatedLead.name}" (${updatedLead.phone}) aapko assign ki gayi hai by ${req.user.name}`, updatedLead._id);
+    // Send notification
+    if (wasReassigned) {
+      // Notify new assignee
+      await sendNotification(
+        userId,
+        '🔄 Lead Reassigned to You',
+        `Lead "${updatedLead.name}" (${updatedLead.phone}) aapko reassign ki gayi hai by ${req.user.name}`,
+        updatedLead._id
+      );
+      // Notify previous assignee
+      if (previousAssigneeId) {
+        await sendNotification(
+          previousAssigneeId,
+          '🔄 Lead Reassigned',
+          `Lead "${updatedLead.name}" (${updatedLead.phone}) aapse ${targetUser.name} ko reassign kar di gayi hai by ${req.user.name}`,
+          updatedLead._id
+        );
+      }
+    } else {
+      // New assignment
+      await sendNotification(
+        userId,
+        '📋 New Lead Assigned',
+        `Lead "${updatedLead.name}" (${updatedLead.phone}) aapko assign ki gayi hai by ${req.user.name}`,
+        updatedLead._id
+      );
+    }
 
     res.status(200).json({
       status: 'success',
