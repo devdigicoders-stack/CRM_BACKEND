@@ -63,20 +63,17 @@ export const notifyRoles = async (roles = [], title, message, leadId = null, met
     if (adminRoles.length > 0) {
       const query = { active: true };
       if (!adminRoles.includes('all_admins')) {
-        query.role = { $in: adminRoles };
+        query.role = { $in: adminRoles.filter(r => r !== 'all_admins') };
       }
       const admins = await Admin.find(query).select('_id').lean();
       admins.forEach(a => targetUserIds.add(a._id.toString()));
     }
 
     // 2. Check Staff Users (sales, calling, accountant, stock, installer, etc.)
-    const userRoles = roleList.filter(r => !['superAdmin'].includes(r));
+    const adminOnlyRoles = ['superAdmin', 'admin', 'branchManager', 'all_admins'];
+    const userRoles = roleList.filter(r => !adminOnlyRoles.includes(r));
     if (userRoles.length > 0) {
-      const query = { active: true };
-      if (!userRoles.includes('all_admins')) {
-        query.role = { $in: userRoles };
-      }
-      const users = await User.find(query).select('_id').lean();
+      const users = await User.find({ active: true, role: { $in: userRoles } }).select('_id').lean();
       users.forEach(u => targetUserIds.add(u._id.toString()));
     }
 

@@ -533,7 +533,10 @@ export const registerFcmToken = async (req, res, next) => {
 
     const isAdmin = ['superAdmin', 'admin'].includes(req.user.role);
     const Model = isAdmin ? Admin : User;
-    await Model.findByIdAndUpdate(req.user._id, { fcmToken: token });
+    await Model.findByIdAndUpdate(req.user._id, {
+      fcmToken: token,
+      $addToSet: { fcmTokens: token },
+    });
 
     res.status(200).json({
       status: 'success',
