@@ -16,14 +16,18 @@ if (firebaseConfigured) {
     if (getApps().length === 0) {
       let privateKey = process.env.FIREBASE_PRIVATE_KEY;
       if (privateKey) {
+        // Strip surrounding quotes if present
         if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
-          try {
-            privateKey = JSON.parse(privateKey);
-          } catch {
-            privateKey = privateKey.slice(1, -1);
-          }
+          privateKey = privateKey.slice(1, -1);
+        } else if (privateKey.startsWith("'") && privateKey.endsWith("'")) {
+          privateKey = privateKey.slice(1, -1);
         }
-        privateKey = privateKey.replace(/\\n/g, '\n');
+        // Replace literal \n with actual newlines (handles all env formats)
+        privateKey = privateKey.replace(/\\n/g, '\n').replace(/\\r/g, '');
+        // If still no newlines, try JSON.parse as last resort
+        if (!privateKey.includes('\n')) {
+          try { privateKey = JSON.parse(`"${privateKey}"`); } catch { /* keep as is */ }
+        }
       }
 
       app = initializeApp({
