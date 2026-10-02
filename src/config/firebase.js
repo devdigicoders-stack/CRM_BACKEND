@@ -16,6 +16,8 @@ if (firebaseConfigured) {
     if (getApps().length === 0) {
       let privateKey = process.env.FIREBASE_PRIVATE_KEY;
       if (privateKey) {
+        // Fix HTML entity encoded quotes (production env issue)
+        privateKey = privateKey.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
         // Strip surrounding quotes if present
         if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
           privateKey = privateKey.slice(1, -1);
