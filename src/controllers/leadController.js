@@ -1762,26 +1762,54 @@ export const bulkReassignLeads = async (req, res, next) => {
 export const getScreeningQueue = async (req, res, next) => {
   try {
     const { page = 1, limit = 20, search, source } = req.query;
-    const query = {
-      status: { $in: ['new', 'unscreened', 'screening_in_progress'] },
+
+    const allowedStatuses = ['new', 'unscreened', 'screening_in_progress', 'assigned'];
+
+    let baseCondition = {
+      status: { $in: allowedStatuses },
     };
 
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { city: { $regex: search, $options: 'i' } },
-      ];
+    if (req.user.role === 'calling') {
+      baseCondition = {
+        $and: [
+          { status: { $in: allowedStatuses } },
+          {
+            $or: [
+              { assignedTo: req.user._id },
+              { assignedTo: null },
+              { assignedTo: { $exists: false } },
+            ],
+          },
+        ],
+      };
     }
+
+    const query = { ...baseCondition };
 
     if (source) {
       query.source = source;
     }
 
+    if (search) {
+      const searchConditions = [
+        { name: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { city: { $regex: search, $options: 'i' } },
+      ];
+
+      if (query.$and) {
+        query.$and.push({ $or: searchConditions });
+      } else {
+        query.$and = [{ status: { $in: allowedStatuses } }, { $or: searchConditions }];
+        delete query.status;
+      }
+    }
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const leads = await Lead.find(query)
       .populate('createdBy', 'name email')
+      .populate('assignedTo', 'name email role')
       .populate('originTelecaller', 'name email')
       .sort({ createdAt: -1 })
       .skip(skip)
