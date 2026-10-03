@@ -258,6 +258,24 @@ export const getLeads = async (req, res, next) => {
           { createdBy: { $in: branchUserIds } }
         ];
       }
+    } else if (['calling', 'telecaller'].includes(req.user.role)) {
+      if (assignedTo) {
+        if (assignedTo === 'unassigned') {
+          query.assignedTo = { $eq: null };
+        } else if (typeof assignedTo === 'string' && assignedTo.includes(',')) {
+          const ids = assignedTo.split(',').map(s => s.trim()).filter(Boolean);
+          query.assignedTo = { $in: ids };
+        } else {
+          query.assignedTo = assignedTo;
+        }
+      } else {
+        query.$or = [
+          { assignedTo: req.user._id },
+          { createdBy: req.user._id },
+          { originTelecaller: req.user._id },
+          { 'remarks.addedBy': req.user._id }
+        ];
+      }
     } else {
       query.assignedTo = req.user._id;
     }
@@ -403,9 +421,13 @@ export const getLeads = async (req, res, next) => {
       : { createdAt: -1 };
 
     const leads = await Lead.find(query)
-      .populate('assignedTo', 'name email role')
+      .populate('assignedTo', 'name email role phone')
       .populate('createdBy', 'name email')
       .populate('assignedBy', 'name email role')
+      .populate('assignedBranch', 'name code city state')
+      .populate('originTelecaller', 'name email role phone')
+      .populate('branchOwner', 'name email role phone')
+      .populate('remarks.addedBy', 'name email role')
       .sort(sortField)
       .skip(skipNum)
       .limit(limitNum)
@@ -437,6 +459,9 @@ export const getLeadById = async (req, res, next) => {
       .populate('assignedTo', 'name email role phone')
       .populate('createdBy', 'name email')
       .populate('assignedBy', 'name email role phone')
+      .populate('assignedBranch', 'name code city state')
+      .populate('originTelecaller', 'name email role phone')
+      .populate('branchOwner', 'name email role phone')
       .populate('remarks.addedBy', 'name email role')
       .populate('productId');
 
@@ -448,10 +473,17 @@ export const getLeadById = async (req, res, next) => {
     const userId = req.user._id.toString();
     const createdById = lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString();
     const assignedId = lead.assignedTo?._id ? lead.assignedTo._id.toString() : lead.assignedTo?.toString();
+    const originTelecallerId = lead.originTelecaller?._id ? lead.originTelecaller._id.toString() : lead.originTelecaller?.toString();
     const installationRepId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
+    const hasTelecallerRemark = Array.isArray(lead.remarks) && lead.remarks.some(r => {
+      const addedById = r.addedBy?._id ? r.addedBy._id.toString() : r.addedBy?.toString();
+      return addedById === userId;
+    });
+
     const hasAccess =
       ['superAdmin', 'admin'].includes(req.user.role) ||
       (req.user.role === 'crmuser' && (createdById === userId || assignedId === userId)) ||
+      (['calling', 'telecaller'].includes(req.user.role) && (createdById === userId || assignedId === userId || originTelecallerId === userId || hasTelecallerRemark)) ||
       (req.user.role === 'accountant' && (lead.transferredToAccounts === true || lead.verificationStatus === 'rejected')) ||
       (req.user.role === 'installation' && (installationRepId === userId || lead.transferredToInstallation === true)) ||
       assignedId === userId;

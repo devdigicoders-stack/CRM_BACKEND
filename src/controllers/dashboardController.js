@@ -32,6 +32,13 @@ export const getDashboardStats = async (req, res, next) => {
         { assignedTo: { $in: branchUserIds } },
         { createdBy: { $in: branchUserIds } }
       ];
+    } else if (['calling', 'telecaller'].includes(req.user.role)) {
+      query.$or = [
+        { assignedTo: req.user._id },
+        { createdBy: req.user._id },
+        { originTelecaller: req.user._id },
+        { 'remarks.addedBy': req.user._id }
+      ];
     } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
