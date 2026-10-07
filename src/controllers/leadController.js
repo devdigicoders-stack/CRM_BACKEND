@@ -428,6 +428,8 @@ export const getLeads = async (req, res, next) => {
       .populate('originTelecaller', 'name email role phone')
       .populate('branchOwner', 'name email role phone')
       .populate('remarks.addedBy', 'name email role')
+      .populate('productId')
+      .populate('items.productId')
       .sort(sortField)
       .skip(skipNum)
       .limit(limitNum)
@@ -463,7 +465,8 @@ export const getLeadById = async (req, res, next) => {
       .populate('originTelecaller', 'name email role phone')
       .populate('branchOwner', 'name email role phone')
       .populate('remarks.addedBy', 'name email role')
-      .populate('productId');
+      .populate('productId')
+      .populate('items.productId');
 
     if (!lead) {
       res.status(404);
@@ -1113,16 +1116,38 @@ export const confirmSale = async (req, res, next) => {
     }
 
     if (Array.isArray(itemsArray) && itemsArray.length > 0) {
-      lead.items = itemsArray.map(item => ({
-        productId: item.productId || null,
-        name: item.name || item.productName || '',
-        quantity: Number(item.quantity) || 1,
-        price: Number(item.price) || 0,
-      }));
-      if (itemsArray[0].productId) {
-        lead.productId = itemsArray[0].productId;
+      const parsedItems = [];
+      for (const item of itemsArray) {
+        let name = item.name || item.productName || '';
+        let price = Number(item.price) || 0;
+        const qty = Number(item.quantity) || 1;
+        const pId = item.productId && item.productId !== '' ? item.productId : null;
+
+        if (pId && (!name || price === 0)) {
+          const prod = await Product.findById(pId).select('name sellingPrice').lean();
+          if (prod) {
+            if (!name) name = prod.name;
+            if (price === 0 && prod.sellingPrice) price = prod.sellingPrice;
+          }
+        }
+        if (name || pId) {
+          parsedItems.push({
+            productId: pId,
+            name: name,
+            quantity: qty,
+            price: price,
+          });
+        }
       }
-      lead.productQuantity = itemsArray.reduce((acc, curr) => acc + (Number(curr.quantity) || 1), 0);
+
+      if (parsedItems.length > 0) {
+        lead.items = parsedItems;
+        const firstWithProd = parsedItems.find(p => p.productId);
+        if (firstWithProd) {
+          lead.productId = firstWithProd.productId;
+        }
+        lead.productQuantity = parsedItems.reduce((acc, curr) => acc + (Number(curr.quantity) || 1), 0);
+      }
     } else if (productId) {
       const product = await Product.findById(productId);
       if (product) {
@@ -1202,6 +1227,7 @@ export const confirmSale = async (req, res, next) => {
     });
 
     const updatedLead = await lead.save();
+    await updatedLead.populate(['productId', 'items.productId', 'assignedTo', 'remarks.addedBy']);
 
     res.status(200).json({
       status: 'success',

@@ -333,17 +333,39 @@ export const transferToInstallation = async (req, res, next) => {
       res.status(400); throw new Error('Lead has already been transferred to Installation Team');
     }
 
-    // Deduct stock if a productId is linked to this lead
-    if (lead.productId) {
-      const product = await Product.findById(lead.productId);
-      if (product) {
-        const qty = Number(lead.productQuantity) || 1;
-        if (product.currentStock < qty) {
-          res.status(400);
-          throw new Error(`Insufficient stock in catalog for ${product.name}! Required: ${qty}, Available: ${product.currentStock}`);
-        }
+    // Deduct stock for all items linked to this lead
+    let salesPersonName = undefined;
+    if (lead.assignedTo) {
+      const spUser = await User.findById(lead.assignedTo).select('name').lean();
+      if (spUser) salesPersonName = spUser.name;
+    }
 
-        product.currentStock -= qty;
+    const itemsToDeduct = [];
+    if (lead.items && lead.items.length > 0) {
+      for (const it of lead.items) {
+        if (it.productId) {
+          itemsToDeduct.push({
+            productId: it.productId._id || it.productId,
+            quantity: Number(it.quantity) || 1,
+            unitPrice: Number(it.price) || 0,
+            name: it.name,
+          });
+        }
+      }
+    } else if (lead.productId) {
+      itemsToDeduct.push({
+        productId: lead.productId._id || lead.productId,
+        quantity: Number(lead.productQuantity) || 1,
+        unitPrice: 0,
+        name: '',
+      });
+    }
+
+    for (const it of itemsToDeduct) {
+      const product = await Product.findById(it.productId);
+      if (product) {
+        const qty = it.quantity;
+        product.currentStock = Math.max(0, product.currentStock - qty);
 
         let warehouseId = null;
         if (product.warehouseStock && product.warehouseStock.length > 0) {
@@ -359,11 +381,7 @@ export const transferToInstallation = async (req, res, next) => {
 
         await product.save();
 
-        let salesPersonName = undefined;
-        if (lead.assignedTo) {
-          const spUser = await User.findById(lead.assignedTo).select('name').lean();
-          if (spUser) salesPersonName = spUser.name;
-        }
+        const unitPrice = it.unitPrice || product.sellingPrice || product.purchasePrice || 0;
 
         // Record Stock Out movement
         await StockMovement.create({
@@ -371,8 +389,8 @@ export const transferToInstallation = async (req, res, next) => {
           product: product._id,
           warehouse: warehouseId || undefined,
           quantity: -qty,
-          unitPrice: product.sellingPrice || product.purchasePrice || 0,
-          totalPrice: qty * (product.sellingPrice || product.purchasePrice || 0),
+          unitPrice: unitPrice,
+          totalPrice: qty * unitPrice,
           referenceNo: lead.awbNumber ? `INV-${lead.awbNumber}` : `SALE-${lead._id}`,
           customer: lead.name,
           customerPhone: lead.phone,
@@ -381,7 +399,7 @@ export const transferToInstallation = async (req, res, next) => {
           salesPersonName,
           invoiceNumber: lead.awbNumber || `INV-${lead._id.toString().slice(-6).toUpperCase()}`,
           invoiceUrl: lead.invoiceUrl || undefined,
-          notes: `Auto stock deduction on Transfer to Installation of Lead #${lead._id}`,
+          notes: `Auto stock deduction on Transfer to Installation of Lead #${lead._id} (${product.name} x${qty})`,
           performedBy: req.user._id,
           performerModel: req.user.role === 'admin' || req.user.role === 'superAdmin' ? 'Admin' : 'User'
         });
