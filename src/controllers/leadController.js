@@ -466,7 +466,9 @@ export const getLeadById = async (req, res, next) => {
       .populate('branchOwner', 'name email role phone')
       .populate('remarks.addedBy', 'name email role')
       .populate('productId')
-      .populate('items.productId');
+      .populate('items.productId')
+      .populate('items.warehouse', 'name code city')
+      .populate('dispatchWarehouse', 'name code city address');
 
     if (!lead) {
       res.status(404);

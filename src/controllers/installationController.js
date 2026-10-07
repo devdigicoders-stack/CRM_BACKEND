@@ -180,6 +180,8 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
       .populate('installationRep', 'name email role')
       .populate('assignedTo', 'name email role')
       .populate('productId')
+      .populate('items.productId')
+      .populate('dispatchWarehouse', 'name code city address')
       .sort({ createdAt: -1 })
       .skip(skipNum)
       .limit(limitNum)

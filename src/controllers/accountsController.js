@@ -5,6 +5,7 @@ import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
 import { Admin } from '../models/Admin.js';
 import { Product } from '../models/Product.js';
+import { Warehouse } from '../models/Warehouse.js';
 import { StockMovement } from '../models/StockMovement.js';
 import { Notification } from '../models/Notification.js';
 import { sendPushNotification } from '../config/firebase.js';
@@ -143,6 +144,8 @@ export const getClosedWonLeads = async (req, res, next) => {
       .populate('remarks.addedBy', 'name email role')
       .populate('productId')
       .populate('items.productId')
+      .populate('items.warehouse', 'name code city')
+      .populate('dispatchWarehouse', 'name code city address')
       .sort({ createdAt: -1 })
       .skip(skipNum)
       .limit(limitNum)
@@ -324,13 +327,26 @@ export const updateTrackingId = async (req, res, next) => {
 
 export const transferToInstallation = async (req, res, next) => {
   try {
+    const { warehouseId, itemWarehouses, remarks: dispatchRemarks } = req.body;
+
+    if (!warehouseId) {
+      res.status(400);
+      throw new Error('Please select a dispatch warehouse to out the stock');
+    }
+
+    const warehouse = await Warehouse.findById(warehouseId);
+    if (!warehouse) {
+      res.status(404);
+      throw new Error('Selected dispatch warehouse not found');
+    }
+
     const lead = await Lead.findById(req.params.id);
     if (!lead) { res.status(404); throw new Error('Lead not found'); }
     if (lead.verificationStatus !== 'verified') {
-      res.status(400); throw new Error('Lead must be approved/verified before transferring to Installation Team');
+      res.status(400); throw new Error('Lead must be approved/verified before transferring to Transport / Installation Team');
     }
     if (lead.transferredToInstallation) {
-      res.status(400); throw new Error('Lead has already been transferred to Installation Team');
+      res.status(400); throw new Error('Lead has already been transferred to Transport / Installation Team');
     }
 
     // Deduct stock for all items linked to this lead
@@ -342,13 +358,17 @@ export const transferToInstallation = async (req, res, next) => {
 
     const itemsToDeduct = [];
     if (lead.items && lead.items.length > 0) {
-      for (const it of lead.items) {
+      for (let i = 0; i < lead.items.length; i++) {
+        const it = lead.items[i];
         if (it.productId) {
+          const itemWhId = (itemWarehouses && itemWarehouses[it.productId._id || it.productId]) || warehouseId;
+          it.warehouse = itemWhId;
           itemsToDeduct.push({
             productId: it.productId._id || it.productId,
             quantity: Number(it.quantity) || 1,
             unitPrice: Number(it.price) || 0,
             name: it.name,
+            warehouseId: itemWhId,
           });
         }
       }
@@ -358,6 +378,7 @@ export const transferToInstallation = async (req, res, next) => {
         quantity: Number(lead.productQuantity) || 1,
         unitPrice: 0,
         name: '',
+        warehouseId: warehouseId,
       });
     }
 
@@ -365,18 +386,24 @@ export const transferToInstallation = async (req, res, next) => {
       const product = await Product.findById(it.productId);
       if (product) {
         const qty = it.quantity;
+        const targetWhId = it.warehouseId || warehouseId;
         product.currentStock = Math.max(0, product.currentStock - qty);
 
-        let warehouseId = null;
-        if (product.warehouseStock && product.warehouseStock.length > 0) {
-          const whStock = product.warehouseStock.find(w => w.quantity >= qty);
+        if (product.warehouseStock && Array.isArray(product.warehouseStock)) {
+          const whStock = product.warehouseStock.find(w => w.warehouse?.toString() === targetWhId.toString());
           if (whStock) {
-            whStock.quantity -= qty;
-            warehouseId = whStock.warehouse;
+            whStock.quantity = Math.max(0, whStock.quantity - qty);
           } else {
-            product.warehouseStock[0].quantity = Math.max(0, product.warehouseStock[0].quantity - qty);
-            warehouseId = product.warehouseStock[0].warehouse;
+            product.warehouseStock.push({
+              warehouse: targetWhId,
+              quantity: 0
+            });
           }
+        } else {
+          product.warehouseStock = [{
+            warehouse: targetWhId,
+            quantity: 0
+          }];
         }
 
         await product.save();
@@ -387,7 +414,7 @@ export const transferToInstallation = async (req, res, next) => {
         await StockMovement.create({
           transactionType: 'stock_out',
           product: product._id,
-          warehouse: warehouseId || undefined,
+          warehouse: targetWhId,
           quantity: -qty,
           unitPrice: unitPrice,
           totalPrice: qty * unitPrice,
@@ -399,29 +426,44 @@ export const transferToInstallation = async (req, res, next) => {
           salesPersonName,
           invoiceNumber: lead.awbNumber || `INV-${lead._id.toString().slice(-6).toUpperCase()}`,
           invoiceUrl: lead.invoiceUrl || undefined,
-          notes: `Auto stock deduction on Transfer to Installation of Lead #${lead._id} (${product.name} x${qty})`,
+          notes: `Stock Out for Lead #${lead._id} (${product.name || 'Product'} x${qty}) from warehouse "${warehouse.name}"${dispatchRemarks ? ` - Remarks: ${dispatchRemarks}` : ''}`,
           performedBy: req.user._id,
           performerModel: req.user.role === 'admin' || req.user.role === 'superAdmin' ? 'Admin' : 'User'
         });
       }
     }
 
+    lead.dispatchWarehouse = warehouseId;
+    if (dispatchRemarks) lead.dispatchRemarks = dispatchRemarks;
     lead.transferredToInstallation = true;
     lead.status = 'in_process';
-    lead.remarks.push({ note: `[Accounts Team] Verified Lead transferred to Installation Team.`, addedBy: req.user._id });
-    const updatedLead = await lead.save();
+    lead.remarks.push({
+      note: `[Accounts Team] Stock out completed from warehouse "${warehouse.name} (${warehouse.code || 'WH'})" & transferred to Transport / Installation Team.${dispatchRemarks ? ` Remarks: ${dispatchRemarks}` : ''}`,
+      addedBy: req.user._id
+    });
+    
+    await lead.save();
+
+    const populatedLead = await Lead.findById(lead._id)
+      .populate('assignedTo', 'name email role phone')
+      .populate('remarks.addedBy', 'name email role')
+      .populate('productId')
+      .populate('items.productId')
+      .populate('items.warehouse', 'name code city')
+      .populate('dispatchWarehouse', 'name code city address')
+      .populate('installationRep', 'name email role phone');
 
     // Notify admins
     const admins = await Admin.find({ role: { $in: ['superAdmin', 'admin'] }, active: true }).select('_id').lean();
     for (const admin of admins) {
-      await sendNotification(admin._id, '🔧 Lead Transferred to Installation', `Lead "${lead.name}" installation team ko transfer ho gayi`, lead._id);
+      await sendNotification(admin._id, '🚚 Lead Dispatched / Transferred', `Lead "${lead.name}" warehouse "${warehouse.name}" se out karke transport/installation team ko transfer kar di gayi`, lead._id);
     }
     // Notify installation rep if already assigned
     if (lead.installationRep) {
-      await sendNotification(lead.installationRep, '🔧 New Installation Lead', `Lead "${lead.name}" (${lead.phone}) aapko installation ke liye assign ki gayi hai`, lead._id);
+      await sendNotification(lead.installationRep, '🔧 New Installation / Transport Lead', `Lead "${lead.name}" (${lead.phone}) aapko assign ki gayi hai. Dispatch Warehouse: ${warehouse.name}`, lead._id);
     }
 
-    res.status(200).json({ status: 'success', data: { lead: formatLeadWithIntegrations(updatedLead) } });
+    res.status(200).json({ status: 'success', data: { lead: formatLeadWithIntegrations(populatedLead) } });
   } catch (error) {
     next(error);
   }

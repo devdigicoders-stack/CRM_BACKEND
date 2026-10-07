@@ -272,8 +272,20 @@ const leadSchema = new mongoose.Schema(
           type: Number,
           default: 0,
         },
+        warehouse: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Warehouse',
+        },
       },
     ],
+    dispatchWarehouse: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Warehouse',
+    },
+    dispatchRemarks: {
+      type: String,
+      trim: true,
+    },
     dealValue: {
       type: Number,
       default: 0,
@@ -303,9 +315,6 @@ const leadSchema = new mongoose.Schema(
     transferredToAccounts: {
       type: Boolean,
       default: false,
-    },
-    saleConfirmedAt: {
-      type: Date,
     },
     saleConfirmedAt: {
       type: Date,
