@@ -625,8 +625,8 @@ export const assignLead = async (req, res, next) => {
       throw new Error('You do not have permission to assign this lead');
     }
 
-    // calling rep can only assign to sales, crmuser can assign to anyone
-    if (req.user.role === 'calling' && targetUser.role !== 'sales') {
+    // calling/telecaller rep can only assign to sales, crmuser can assign to anyone
+    if (['calling', 'telecaller'].includes(req.user.role) && targetUser.role !== 'sales') {
       res.status(400);
       throw new Error('Calling representatives can only assign leads to the Sales Panel representatives');
     }
@@ -1545,8 +1545,8 @@ export const getStaffDataSummary = async (req, res, next) => {
       throw new Error('Only Super Admin and Admin can access staff data summary');
     }
 
-    // Find all users who can be assigned leads (sales, crmuser, calling, etc.)
-    const users = await User.find({ role: { $in: ['sales', 'crmuser', 'calling', 'user', 'installation'] } })
+    // Find all users who can be assigned leads (sales, crmuser, calling, telecaller, etc.)
+    const users = await User.find({ role: { $in: ['sales', 'crmuser', 'calling', 'telecaller', 'user', 'installation'] } })
       .select('name email phone role active')
       .sort({ name: 1 })
       .lean();
@@ -1829,15 +1829,21 @@ export const getScreeningQueue = async (req, res, next) => {
       status: { $in: allowedStatuses },
     };
 
-    if (req.user.role === 'calling') {
+    if (['calling', 'telecaller'].includes(req.user.role)) {
+      baseCondition = {
+        $and: [
+          { status: { $in: allowedStatuses } },
+          { assignedTo: req.user._id },
+        ],
+      };
+    } else if (req.user.role === 'crmuser') {
       baseCondition = {
         $and: [
           { status: { $in: allowedStatuses } },
           {
             $or: [
               { assignedTo: req.user._id },
-              { assignedTo: null },
-              { assignedTo: { $exists: false } },
+              { createdBy: req.user._id },
             ],
           },
         ],

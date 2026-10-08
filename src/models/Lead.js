@@ -242,6 +242,39 @@ const leadSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    transferApprovalStatus: {
+      type: String,
+      enum: ['none', 'pending', 'approved', 'rejected'],
+      default: 'none',
+    },
+    transferRequestedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    transferRequestedAt: {
+      type: Date,
+      default: null,
+    },
+    transferRejectionRemarks: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    transferApprovalRemarks: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    transferApprovedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin',
+      default: null,
+    },
+    transferApprovedAt: {
+      type: Date,
+      default: null,
+    },
     productDetails: {
       type: String,
       trim: true,

@@ -97,11 +97,14 @@ apiRouter.get('/reports/export/pdf', protect, restrictTo('superAdmin', 'admin', 
 // --- Accounts (Accountant Panel) Routes ---
 apiRouter.get('/accounts/dashboard', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.getAccountDashboard);
 apiRouter.get('/accounts/leads', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.getClosedWonLeads);
+apiRouter.get('/accounts/transfer-requests', protect, restrictTo('superAdmin', 'admin', 'accountant'), accountsController.getTransferRequests);
 apiRouter.put('/accounts/leads/:id/verify', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.verifySale);
 apiRouter.put('/accounts/leads/:id/invoice', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.uploadInvoiceMiddleware, accountsController.uploadInvoice);
 apiRouter.put('/accounts/leads/:id/payment', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.updatePaymentAndTransaction);
 apiRouter.put('/accounts/leads/:id/tracking', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.updateTrackingId);
 apiRouter.put('/accounts/leads/:id/transfer', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.transferToInstallation);
+apiRouter.put('/accounts/leads/:id/approve-transfer', protect, restrictTo('superAdmin', 'admin'), accountsController.approveInstallationTransfer);
+apiRouter.put('/accounts/leads/:id/reject-transfer', protect, restrictTo('superAdmin', 'admin'), accountsController.rejectInstallationTransfer);
 
 
 // --- Branch Routes ---
@@ -166,6 +169,12 @@ apiRouter.post('/stock/products/import-bulk', protect, restrictTo('superAdmin', 
 // Stock Movements
 apiRouter.get('/stock/movements', protect, stockController.getStockMovements);
 apiRouter.post('/stock/movements', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.recordStockMovement);
+
+// Stock Delete Requests & History (Approval workflow)
+apiRouter.post('/stock/delete-request', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.requestStockDelete);
+apiRouter.get('/stock/delete-requests', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.getStockDeleteRequests);
+apiRouter.put('/stock/delete-requests/:id/action', protect, restrictTo('superAdmin', 'admin'), stockController.actionStockDeleteRequest);
+
 
 
 

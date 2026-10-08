@@ -4,10 +4,124 @@ import { Unit } from '../models/Unit.js';
 import { Warehouse } from '../models/Warehouse.js';
 import { Product } from '../models/Product.js';
 import { StockMovement } from '../models/StockMovement.js';
+import { StockDeleteRequest } from '../models/StockDeleteRequest.js';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
-import { notifyRoles } from '../services/notificationService.js';
+import { Admin } from '../models/Admin.js';
+import { Notification } from '../models/Notification.js';
+import { notifyRoles, notifySuperAdminAndAdmins } from '../services/notificationService.js';
+import { sendPushNotification } from '../config/firebase.js';
 import XLSX from 'xlsx';
+
+const getItemModel = (itemType) => {
+  switch (itemType) {
+    case 'Product': return Product;
+    case 'Category': return Category;
+    case 'Brand': return Brand;
+    case 'Unit': return Unit;
+    case 'Warehouse': return Warehouse;
+    case 'StockMovement': return StockMovement;
+    default: return null;
+  }
+};
+
+const getItemSummary = (itemType, item) => {
+  if (!item) return '';
+  switch (itemType) {
+    case 'Product':
+      return `SKU: ${item.sku || 'N/A'} | Stock: ${item.currentStock || 0} | Selling Price: ₹${item.sellingPrice || 0} | Purchase Price: ₹${item.purchasePrice || 0}`;
+    case 'Category':
+      return `Code: ${item.code || 'N/A'} | Description: ${item.description || 'N/A'}`;
+    case 'Brand':
+      return `Code: ${item.code || 'N/A'} | Description: ${item.description || 'N/A'}`;
+    case 'Unit':
+      return `Short Name: ${item.shortName || 'N/A'}`;
+    case 'Warehouse':
+      return `Code: ${item.code || 'N/A'} | City: ${item.city || 'N/A'} | Manager: ${item.managerName || 'N/A'}`;
+    case 'StockMovement':
+      return `Type: ${item.transactionType || 'N/A'} | Qty: ${item.quantity || 0} | Ref: ${item.referenceNo || 'N/A'}`;
+    default:
+      return '';
+  }
+};
+
+export const handleItemDeleteRequest = async ({ itemType, itemId, req, res, next, reason = '' }) => {
+  try {
+    const Model = getItemModel(itemType);
+    if (!Model) return res.status(400).json({ status: 'fail', message: 'Invalid item type' });
+
+    const item = await Model.findById(itemId).lean();
+    if (!item) return res.status(404).json({ status: 'fail', message: `${itemType} not found` });
+
+    const itemName = item.name || item.sku || item.referenceNo || item.code || `${itemType} #${item._id.toString().slice(-6)}`;
+    const itemDetails = getItemSummary(itemType, item);
+    const deleteReason = reason || req.body?.reason || req.query?.reason || 'Deletion requested from Stock panel';
+
+    // If requester is not superAdmin: Create a pending approval request
+    if (req.user.role !== 'superAdmin') {
+      const existing = await StockDeleteRequest.findOne({ itemType, itemId, status: 'pending' });
+      if (existing) {
+        return res.status(400).json({
+          status: 'fail',
+          message: `A deletion request is already pending SuperAdmin approval for this ${itemType}.`
+        });
+      }
+
+      const deleteReq = await StockDeleteRequest.create({
+        itemType,
+        itemId: item._id,
+        itemName,
+        itemDetails,
+        itemData: item,
+        reason: deleteReason,
+        requestedBy: req.user._id,
+        requestedByModel: req.user.role === 'admin' || req.user.role === 'superAdmin' ? 'Admin' : 'User',
+        status: 'pending'
+      });
+
+      // Send push & in-app notification to SuperAdmin
+      notifySuperAdminAndAdmins(
+        '🗑️ Stock Deletion Approval Required',
+        `User "${req.user.name || 'Staff'}" requested deletion of ${itemType} "${itemName}". SuperAdmin approval required.`,
+        null,
+        { requestId: deleteReq._id.toString(), itemType, itemId: itemId.toString() },
+        'stock_alert'
+      ).catch(err => console.error('[Notification Error]:', err.message));
+
+      return res.status(200).json({
+        status: 'success',
+        isPendingApproval: true,
+        message: `Deletion request for ${itemType} "${itemName}" submitted to SuperAdmin for approval. Data will be deleted once approved.`,
+        data: deleteReq
+      });
+    } else {
+      // SuperAdmin direct deletion: Log full snapshot in StockDeleteRequest for permanent history, then delete
+      await StockDeleteRequest.create({
+        itemType,
+        itemId: item._id,
+        itemName,
+        itemDetails,
+        itemData: item,
+        reason: deleteReason,
+        requestedBy: req.user._id,
+        requestedByModel: 'Admin',
+        status: 'approved',
+        actionBy: req.user._id,
+        actionByModel: 'Admin',
+        actionAt: new Date(),
+        actionRemarks: 'Directly deleted by SuperAdmin'
+      });
+
+      await Model.findByIdAndDelete(itemId);
+      return res.status(200).json({
+        status: 'success',
+        message: `${itemType} "${itemName}" deleted successfully and deletion history recorded.`
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
 
 // --- Default Data Seeder ---
 export const seedStockMetadata = async (req, res, next) => {
@@ -163,12 +277,7 @@ export const updateCategory = async (req, res, next) => {
 };
 
 export const deleteCategory = async (req, res, next) => {
-  try {
-    await Category.findByIdAndDelete(req.params.id);
-    res.status(200).json({ status: 'success', message: 'Category deleted' });
-  } catch (error) {
-    next(error);
-  }
+  return handleItemDeleteRequest({ itemType: 'Category', itemId: req.params.id, req, res, next });
 };
 
 // --- Brand Controllers ---
@@ -202,12 +311,7 @@ export const updateBrand = async (req, res, next) => {
 };
 
 export const deleteBrand = async (req, res, next) => {
-  try {
-    await Brand.findByIdAndDelete(req.params.id);
-    res.status(200).json({ status: 'success', message: 'Brand deleted' });
-  } catch (error) {
-    next(error);
-  }
+  return handleItemDeleteRequest({ itemType: 'Brand', itemId: req.params.id, req, res, next });
 };
 
 // --- Unit Controllers ---
@@ -241,12 +345,7 @@ export const updateUnit = async (req, res, next) => {
 };
 
 export const deleteUnit = async (req, res, next) => {
-  try {
-    await Unit.findByIdAndDelete(req.params.id);
-    res.status(200).json({ status: 'success', message: 'Unit deleted' });
-  } catch (error) {
-    next(error);
-  }
+  return handleItemDeleteRequest({ itemType: 'Unit', itemId: req.params.id, req, res, next });
 };
 
 // --- Warehouse Controllers ---
@@ -280,12 +379,7 @@ export const updateWarehouse = async (req, res, next) => {
 };
 
 export const deleteWarehouse = async (req, res, next) => {
-  try {
-    await Warehouse.findByIdAndDelete(req.params.id);
-    res.status(200).json({ status: 'success', message: 'Warehouse deleted' });
-  } catch (error) {
-    next(error);
-  }
+  return handleItemDeleteRequest({ itemType: 'Warehouse', itemId: req.params.id, req, res, next });
 };
 
 // --- Product Controllers ---
@@ -409,12 +503,7 @@ export const updateProduct = async (req, res, next) => {
 };
 
 export const deleteProduct = async (req, res, next) => {
-  try {
-    await Product.findByIdAndDelete(req.params.id);
-    res.status(200).json({ status: 'success', message: 'Product deleted' });
-  } catch (error) {
-    next(error);
-  }
+  return handleItemDeleteRequest({ itemType: 'Product', itemId: req.params.id, req, res, next });
 };
 
 // --- Bulk Product Import (Excel / CSV) ---
@@ -791,3 +880,136 @@ export const exportProductsExcel = async (req, res, next) => {
     next(error);
   }
 };
+
+// --- Stock Delete Requests & Approval History ---
+
+export const requestStockDelete = async (req, res, next) => {
+  try {
+    const { itemType, itemId, reason } = req.body;
+    if (!itemType || !itemId) {
+      return res.status(400).json({ status: 'fail', message: 'itemType and itemId are required' });
+    }
+    return handleItemDeleteRequest({ itemType, itemId, req, res, next, reason });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getStockDeleteRequests = async (req, res, next) => {
+  try {
+    const { status = 'all', itemType, search, page = 1, limit = 50 } = req.query;
+    const query = {};
+
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+    if (itemType) {
+      query.itemType = itemType;
+    }
+    if (search) {
+      const regex = new RegExp(search.trim(), 'i');
+      query.$or = [{ itemName: regex }, { itemDetails: regex }, { reason: regex }, { actionRemarks: regex }];
+    }
+
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 50;
+    const skipNum = (pageNum - 1) * limitNum;
+
+    const total = await StockDeleteRequest.countDocuments(query);
+    const requests = await StockDeleteRequest.find(query)
+      .populate('requestedBy', 'name email role phone')
+      .populate('actionBy', 'name email role phone')
+      .sort({ createdAt: -1 })
+      .skip(skipNum)
+      .limit(limitNum)
+      .lean();
+
+    res.status(200).json({
+      status: 'success',
+      count: requests.length,
+      total,
+      pages: Math.ceil(total / limitNum),
+      currentPage: pageNum,
+      data: requests,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const actionStockDeleteRequest = async (req, res, next) => {
+  try {
+    const { action, remarks } = req.body;
+    if (!action || !['approve', 'reject'].includes(action)) {
+      return res.status(400).json({ status: 'fail', message: 'Valid action (approve or reject) is required' });
+    }
+
+    const deleteReq = await StockDeleteRequest.findById(req.params.id);
+    if (!deleteReq) {
+      return res.status(404).json({ status: 'fail', message: 'Stock delete request not found' });
+    }
+
+    if (deleteReq.status !== 'pending') {
+      return res.status(400).json({
+        status: 'fail',
+        message: `This request has already been ${deleteReq.status} by an admin.`
+      });
+    }
+
+    const actionRemarks = remarks || (action === 'approve' ? 'Approved by Admin' : 'Rejected by Admin');
+
+    if (action === 'approve') {
+      const Model = getItemModel(deleteReq.itemType);
+      if (Model) {
+        await Model.findByIdAndDelete(deleteReq.itemId);
+      }
+      deleteReq.status = 'approved';
+    } else {
+      deleteReq.status = 'rejected';
+    }
+
+    deleteReq.actionRemarks = actionRemarks;
+    deleteReq.actionBy = req.user._id;
+    deleteReq.actionByModel = req.user.role === 'admin' || req.user.role === 'superAdmin' ? 'Admin' : 'User';
+    deleteReq.actionAt = new Date();
+    await deleteReq.save();
+
+    // Send in-app and push notification to the requester
+    try {
+      if (deleteReq.requestedBy) {
+        const notifTitle = action === 'approve' ? '✅ Deletion Request Approved' : '❌ Deletion Request Rejected';
+        const notifMsg = action === 'approve'
+          ? `Your request to delete ${deleteReq.itemType} "${deleteReq.itemName}" was approved by Admin. Item has been removed.`
+          : `Your request to delete ${deleteReq.itemType} "${deleteReq.itemName}" was rejected. Reason: ${actionRemarks}`;
+
+        await Notification.create({
+          title: notifTitle,
+          message: notifMsg,
+          recipient: deleteReq.requestedBy,
+          type: 'stock_alert',
+        });
+
+        const targetUser = await User.findById(deleteReq.requestedBy).select('fcmToken').lean() ||
+          await Admin.findById(deleteReq.requestedBy).select('fcmToken').lean();
+        if (targetUser?.fcmToken) {
+          await sendPushNotification(targetUser.fcmToken, notifTitle, notifMsg);
+        }
+      }
+    } catch (notifErr) {
+      console.error('[Notification Error]:', notifErr.message);
+    }
+
+    const populatedReq = await StockDeleteRequest.findById(deleteReq._id)
+      .populate('requestedBy', 'name email role phone')
+      .populate('actionBy', 'name email role phone');
+
+    res.status(200).json({
+      status: 'success',
+      message: `Deletion request has been ${action === 'approve' ? 'approved and item deleted' : 'rejected'}.`,
+      data: populatedReq,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
