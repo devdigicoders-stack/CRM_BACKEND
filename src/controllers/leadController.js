@@ -41,7 +41,7 @@ const formatLeadWithIntegrations = (lead) => {
 // @access  Private
 export const createLead = async (req, res, next) => {
   try {
-    const { name, phone, email, address, source, status, priority, tags, assignedTo, followUpDate, remark } = req.body;
+    const { name, phone, email, address, city, state, pinCode, source, status, priority, tags, assignedTo, followUpDate, remark } = req.body;
 
     if (!name || !phone) {
       res.status(400);
@@ -59,12 +59,17 @@ export const createLead = async (req, res, next) => {
 
     const creatorModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
 
+    const formattedAddress = address || [city, state, pinCode ? `PIN: ${pinCode}` : ''].filter(Boolean).join(', ');
+
     // Build lead details
     const leadData = {
       name,
       phone,
       email,
-      address,
+      address: formattedAddress,
+      city: city || '',
+      state: state || '',
+      pinCode: pinCode || '',
       source,
       status: finalStatus,
       priority,
@@ -514,7 +519,7 @@ export const getLeadById = async (req, res, next) => {
 // @access  Private
 export const updateLead = async (req, res, next) => {
   try {
-    const { name, phone, email, address, source, priority, tags, status, isCallDone } = req.body;
+    const { name, phone, email, address, city, state, pinCode, source, priority, tags, status, isCallDone } = req.body;
 
     const lead = await Lead.findById(req.params.id);
 
@@ -537,6 +542,9 @@ export const updateLead = async (req, res, next) => {
     if (phone) lead.phone = phone;
     if (email !== undefined) lead.email = email;
     if (address !== undefined) lead.address = address;
+    if (city !== undefined) lead.city = city;
+    if (state !== undefined) lead.state = state;
+    if (pinCode !== undefined) lead.pinCode = pinCode;
     if (source !== undefined) lead.source = source;
     if (priority) lead.priority = priority;
     if (tags !== undefined) {
@@ -1975,6 +1983,10 @@ export const qualifyAndAssignBranch = async (req, res, next) => {
     lead.addressVerified = true;
     lead.addressVerifiedBy = req.user._id;
     lead.addressVerifiedAt = new Date();
+
+    if (!lead.address || lead.address.trim() === '') {
+      lead.address = [city, state, pinCode ? `(${pinCode})` : ''].filter(Boolean).join(', ');
+    }
 
     // Assign Branch & Branch Executive/Manager
     lead.assignedBranch = branchId;
