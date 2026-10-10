@@ -30,6 +30,7 @@ apiRouter.put('/profile', protect, authController.uploadProfilePicMiddleware, au
 
 // --- Sales Users List (for assignment dropdown - accessible by all) ---
 apiRouter.get('/users/sales-list', protect, userController.getSalesUsers);
+apiRouter.get('/users/telecaller-list', protect, userController.getTelecallerUsers);
 apiRouter.post('/users/fcm-token', protect, userController.registerFcmToken);
 
 // --- Telecaller / Lead Screening Routes ---
@@ -93,6 +94,8 @@ apiRouter.get('/reports/analytics', protect, restrictTo('superAdmin', 'admin', '
 apiRouter.get('/reports/kpi-details', protect, restrictTo('superAdmin', 'admin', 'manager', 'sales', 'branchManager'), checkPermission('reports'), reportController.getKpiDetails);
 apiRouter.get('/reports/export/excel', protect, restrictTo('superAdmin', 'admin', 'manager', 'branchManager'), checkPermission('reports'), reportController.exportLeadsExcel);
 apiRouter.get('/reports/export/pdf', protect, restrictTo('superAdmin', 'admin', 'manager', 'branchManager'), checkPermission('reports'), reportController.exportLeadsPdf);
+apiRouter.get('/reports/telecaller-analytics', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('reports'), reportController.getTelecallerAnalytics);
+apiRouter.get('/reports/telecaller-drilldown', protect, restrictTo('superAdmin', 'admin', 'branchManager'), checkPermission('reports'), reportController.getTelecallerDrilldown);
 
 // --- Accounts (Accountant Panel) Routes ---
 apiRouter.get('/accounts/dashboard', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.getAccountDashboard);
@@ -129,6 +132,9 @@ apiRouter.put('/installation/leads/:id/clear-transit-remark', protect, restrictT
 
 // --- Stock Management Routes ---
 apiRouter.get('/stock/dashboard', protect, stockController.getDashboardStats);
+apiRouter.get('/stock/reports/analytics', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.getStockAnalytics);
+apiRouter.get('/stock/reports/drilldown', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.getStockDrilldown);
+apiRouter.get('/stock/reports/product-movements/:productId', protect, restrictTo('superAdmin', 'admin', 'stock'), stockController.getProductMovementLedger);
 
 // Categories
 apiRouter.get('/stock/categories', protect, stockController.getCategories);

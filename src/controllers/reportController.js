@@ -1,6 +1,8 @@
 import XLSX from 'xlsx';
 import PDFDocument from 'pdfkit';
 import { Lead } from '../models/Lead.js';
+import { User } from '../models/User.js';
+import { Branch } from '../models/Branch.js';
 import mongoose from 'mongoose';
 
 // Helper to compile filters based on query params
@@ -538,3 +540,589 @@ export const getKpiDetails = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get Telecaller Comprehensive Analytics & Leaderboard
+// @route   GET /api/v1/reports/telecaller-analytics
+// @access  Private (superAdmin, admin, branchManager)
+export const getTelecallerAnalytics = async (req, res, next) => {
+  try {
+    const { telecallerId, timeframe, startDate, endDate, branchId, city, state, pinCode, location } = req.query;
+
+    // 1. Fetch relevant telecallers
+    let telecallerQuery = { role: { $in: ['telecaller', 'calling', 'crmuser'] } };
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      telecallerQuery._id = { $in: branchUserIds };
+    }
+    const allTelecallers = await User.find(telecallerQuery)
+      .select('name email phone role active profilePic')
+      .sort({ name: 1 })
+      .lean();
+
+    const telecallerMap = new Map();
+    allTelecallers.forEach(t => telecallerMap.set(t._id.toString(), t));
+
+    // Determine target telecaller IDs
+    let targetTelecallerIds = [];
+    const isSingleTelecaller = telecallerId && telecallerId !== 'all';
+    if (isSingleTelecaller) {
+      if (mongoose.Types.ObjectId.isValid(telecallerId)) {
+        targetTelecallerIds = [new mongoose.Types.ObjectId(telecallerId)];
+      }
+    } else {
+      targetTelecallerIds = allTelecallers.map(t => t._id);
+    }
+
+    // 2. Date filter
+    const now = new Date();
+    let dateFilter = null;
+    if (startDate || endDate) {
+      dateFilter = {};
+      if (startDate) {
+        const s = new Date(startDate);
+        s.setHours(0, 0, 0, 0);
+        dateFilter.$gte = s;
+      }
+      if (endDate) {
+        const e = new Date(endDate);
+        e.setHours(23, 59, 59, 999);
+        dateFilter.$lte = e;
+      }
+    } else if (timeframe && timeframe !== 'allTime') {
+      dateFilter = {};
+      if (timeframe === 'today') {
+        const s = new Date(now);
+        s.setHours(0, 0, 0, 0);
+        const e = new Date(now);
+        e.setHours(23, 59, 59, 999);
+        dateFilter.$gte = s;
+        dateFilter.$lte = e;
+      } else if (timeframe === 'thisWeek') {
+        const s = new Date(now);
+        s.setDate(now.getDate() - now.getDay());
+        s.setHours(0, 0, 0, 0);
+        dateFilter.$gte = s;
+      } else if (timeframe === 'thisMonth') {
+        const s = new Date(now.getFullYear(), now.getMonth(), 1);
+        s.setHours(0, 0, 0, 0);
+        dateFilter.$gte = s;
+      } else if (timeframe === 'thisYear') {
+        const s = new Date(now.getFullYear(), 0, 1);
+        s.setHours(0, 0, 0, 0);
+        dateFilter.$gte = s;
+      }
+    }
+
+    // 3. Build Query
+    const query = {};
+    if (targetTelecallerIds.length > 0) {
+      if (isSingleTelecaller) {
+        query.$or = [
+          { originTelecaller: { $in: targetTelecallerIds } },
+          { assignedTo: { $in: targetTelecallerIds } },
+          { 'remarks.addedBy': { $in: targetTelecallerIds } }
+        ];
+      } else {
+        query.$or = [
+          { originTelecaller: { $in: targetTelecallerIds } },
+          { assignedTo: { $in: targetTelecallerIds } },
+          { 'remarks.addedBy': { $in: targetTelecallerIds } },
+          { originTelecaller: { $ne: null } }
+        ];
+      }
+    }
+
+    if (dateFilter) {
+      query.createdAt = dateFilter;
+    }
+
+    if (branchId && mongoose.Types.ObjectId.isValid(branchId)) {
+      query.assignedBranch = new mongoose.Types.ObjectId(branchId);
+    }
+
+    // Location Filters (State, City, PinCode, Location text)
+    if (state && state.trim()) {
+      query.state = { $regex: new RegExp(`^${state.trim()}$`, 'i') };
+    }
+    if (city && city.trim()) {
+      query.city = { $regex: new RegExp(`^${city.trim()}$`, 'i') };
+    }
+    if (pinCode && pinCode.trim()) {
+      query.pinCode = pinCode.trim();
+    }
+    if (location && location.trim()) {
+      const locRegex = { $regex: location.trim(), $options: 'i' };
+      const locConds = [
+        { city: locRegex },
+        { state: locRegex },
+        { pinCode: locRegex },
+        { address: locRegex }
+      ];
+      if (query.$and) {
+        query.$and.push({ $or: locConds });
+      } else {
+        query.$and = [{ $or: locConds }];
+      }
+    }
+
+    // Fetch leads
+    const leads = await Lead.find(query)
+      .populate('originTelecaller', 'name email phone')
+      .populate('assignedTo', 'name email phone role')
+      .populate('assignedBranch', 'name city state')
+      .select('name phone email address city state pinCode status priority source originTelecaller assignedBranch assignedTo followUpDate dealValue amountPaid telecallerIncentive remarks createdAt updatedAt isCallDone transferredToInstallation')
+      .lean();
+
+    // 4. Calculate Aggregate Metrics
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(now);
+    endOfToday.setHours(23, 59, 59, 999);
+
+    let totalCalls = 0;
+    let qualifiedCount = 0;
+    let convertedCount = 0;
+    let totalDealValue = 0;
+    let totalIncentive = 0;
+    let pendingFollowups = 0;
+    let todayFollowups = 0;
+    let overdueFollowups = 0;
+    let upcomingFollowups = 0;
+
+    const statusBreakdown = {
+      new: 0,
+      unscreened: 0,
+      screening_in_progress: 0,
+      interested: 0,
+      callback: 0,
+      qualified: 0,
+      assigned_to_branch: 0,
+      converted: 0,
+      closed: 0,
+      not_interested: 0,
+      invalid_number: 0,
+      disqualified: 0,
+      call_done: 0,
+      other: 0,
+    };
+
+    const branchBreakdown = {};
+    const cityBreakdown = {};
+    const stateBreakdown = {};
+
+    // Helper to identify if remark was by telecaller
+    const isTelecallerRemark = (r) => {
+      if (!r) return false;
+      if (r.note && (r.note.includes('[TELECALLER') || r.note.includes('[QUALIFIED'))) return true;
+      if (r.addedBy && targetTelecallerIds.length > 0) {
+        const addedById = r.addedBy._id ? r.addedBy._id.toString() : r.addedBy.toString();
+        return targetTelecallerIds.some(id => id.toString() === addedById);
+      }
+      return false;
+    };
+
+    leads.forEach(lead => {
+      const st = lead.status || 'new';
+      if (statusBreakdown[st] !== undefined) {
+        statusBreakdown[st]++;
+      } else {
+        statusBreakdown.other++;
+      }
+
+      // Count remarks / calls
+      if (Array.isArray(lead.remarks)) {
+        lead.remarks.forEach(r => {
+          if (isTelecallerRemark(r)) {
+            if (dateFilter) {
+              const rDate = new Date(r.createdAt);
+              if (dateFilter.$gte && rDate < dateFilter.$gte) return;
+              if (dateFilter.$lte && rDate > dateFilter.$lte) return;
+            }
+            totalCalls++;
+          }
+        });
+      }
+
+      // Qualified / Handed over to branch
+      const isQualified = st === 'assigned_to_branch' || lead.assignedBranch || (Array.isArray(lead.remarks) && lead.remarks.some(r => r.note && r.note.includes('[QUALIFIED')));
+      if (isQualified) {
+        qualifiedCount++;
+        const branchName = lead.assignedBranch?.name || 'Unassigned Branch';
+        branchBreakdown[branchName] = (branchBreakdown[branchName] || 0) + 1;
+      }
+
+      // Location breakdowns
+      if (lead.city && lead.city.trim()) {
+        const cName = lead.city.trim();
+        cityBreakdown[cName] = (cityBreakdown[cName] || 0) + 1;
+      }
+      if (lead.state && lead.state.trim()) {
+        const sName = lead.state.trim();
+        stateBreakdown[sName] = (stateBreakdown[sName] || 0) + 1;
+      }
+
+      // Converted to sales
+      const isConverted = ['converted', 'closed'].includes(st) || lead.transferredToInstallation === true;
+      if (isConverted) {
+        convertedCount++;
+        const val = Number(lead.dealValue) || 0;
+        totalDealValue += val;
+        const inc = Number(lead.telecallerIncentive) || (val > 0 ? Math.round(val * 0.05) : 500);
+        totalIncentive += inc;
+      }
+
+      // Follow-up calculations
+      if (lead.followUpDate) {
+        const fDate = new Date(lead.followUpDate);
+        if (!['converted', 'closed'].includes(st)) {
+          pendingFollowups++;
+          if (fDate >= startOfToday && fDate <= endOfToday) {
+            todayFollowups++;
+          } else if (fDate < startOfToday) {
+            overdueFollowups++;
+          } else if (fDate > endOfToday) {
+            upcomingFollowups++;
+          }
+        }
+      }
+    });
+
+    const totalLeads = leads.length;
+    const conversionRate = totalLeads > 0 ? ((convertedCount / totalLeads) * 100).toFixed(1) : '0.0';
+    const qualificationRate = totalLeads > 0 ? ((qualifiedCount / totalLeads) * 100).toFixed(1) : '0.0';
+
+    // 5. Daily Trend (Last 7 Days)
+    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dailyActivity = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dayName = daysOfWeek[d.getDay()];
+      const dateStr = d.toISOString().split('T')[0];
+
+      let dayCalls = 0;
+      let dayQualified = 0;
+      let dayConverted = 0;
+
+      leads.forEach(l => {
+        if (Array.isArray(l.remarks)) {
+          l.remarks.forEach(r => {
+            if (r.createdAt && isTelecallerRemark(r)) {
+              if (new Date(r.createdAt).toISOString().split('T')[0] === dateStr) {
+                dayCalls++;
+              }
+            }
+          });
+        }
+
+        if (l.updatedAt && new Date(l.updatedAt).toISOString().split('T')[0] === dateStr) {
+          if (l.status === 'assigned_to_branch' || l.assignedBranch) dayQualified++;
+          if (['converted', 'closed'].includes(l.status)) dayConverted++;
+        }
+      });
+
+      dailyActivity.push({
+        day: dayName,
+        date: dateStr,
+        calls: dayCalls,
+        qualified: dayQualified,
+        converted: dayConverted
+      });
+    }
+
+    // 6. Leaderboard / Per-Telecaller Comparison
+    const leaderboardMap = new Map();
+    allTelecallers.forEach(t => {
+      leaderboardMap.set(t._id.toString(), {
+        _id: t._id,
+        name: t.name,
+        email: t.email,
+        phone: t.phone || '',
+        role: t.role,
+        active: t.active,
+        totalLeads: 0,
+        totalCalls: 0,
+        qualified: 0,
+        converted: 0,
+        dealValue: 0,
+        incentive: 0,
+        pendingFollowups: 0,
+        overdueFollowups: 0,
+        conversionRate: '0.0%'
+      });
+    });
+
+    leads.forEach(lead => {
+      let primaryTelecallerId = null;
+      if (lead.originTelecaller?._id) {
+        primaryTelecallerId = lead.originTelecaller._id.toString();
+      } else if (lead.assignedTo?._id && ['telecaller', 'calling', 'crmuser'].includes(lead.assignedTo.role)) {
+        primaryTelecallerId = lead.assignedTo._id.toString();
+      } else if (Array.isArray(lead.remarks) && lead.remarks.length > 0) {
+        for (const r of lead.remarks) {
+          const rAdded = r.addedBy?._id ? r.addedBy._id.toString() : r.addedBy?.toString();
+          if (rAdded && leaderboardMap.has(rAdded)) {
+            primaryTelecallerId = rAdded;
+            break;
+          }
+        }
+      }
+
+      if (primaryTelecallerId && leaderboardMap.has(primaryTelecallerId)) {
+        const stats = leaderboardMap.get(primaryTelecallerId);
+        stats.totalLeads++;
+
+        const isLeadQualified = lead.status === 'assigned_to_branch' || lead.assignedBranch;
+        if (isLeadQualified) stats.qualified++;
+
+        const isLeadConverted = ['converted', 'closed'].includes(lead.status) || lead.transferredToInstallation === true;
+        if (isLeadConverted) {
+          stats.converted++;
+          const val = Number(lead.dealValue) || 0;
+          stats.dealValue += val;
+          stats.incentive += Number(lead.telecallerIncentive) || (val > 0 ? Math.round(val * 0.05) : 500);
+        }
+
+        if (lead.followUpDate && !['converted', 'closed'].includes(lead.status)) {
+          stats.pendingFollowups++;
+          if (new Date(lead.followUpDate) < startOfToday) {
+            stats.overdueFollowups++;
+          }
+        }
+      }
+
+      if (Array.isArray(lead.remarks)) {
+        lead.remarks.forEach(r => {
+          const rAdded = r.addedBy?._id ? r.addedBy._id.toString() : r.addedBy?.toString();
+          if (rAdded && leaderboardMap.has(rAdded)) {
+            leaderboardMap.get(rAdded).totalCalls++;
+          }
+        });
+      }
+    });
+
+    const leaderboard = Array.from(leaderboardMap.values()).map(item => {
+      const rate = item.totalLeads > 0 ? ((item.converted / item.totalLeads) * 100).toFixed(1) : '0.0';
+      return {
+        ...item,
+        conversionRate: `${rate}%`
+      };
+    }).sort((a, b) => b.qualified - a.qualified || b.totalCalls - a.totalCalls);
+
+    // Fetch distinct available locations for filtering dropdowns
+    const [distinctCities, distinctStates] = await Promise.all([
+      Lead.distinct('city', { city: { $nin: ['', null] } }).catch(() => []),
+      Lead.distinct('state', { state: { $nin: ['', null] } }).catch(() => [])
+    ]);
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        summary: {
+          totalLeads,
+          totalCalls,
+          qualifiedCount,
+          convertedCount,
+          conversionRate: `${conversionRate}%`,
+          qualificationRate: `${qualificationRate}%`,
+          totalDealValue,
+          totalIncentive,
+          pendingFollowups,
+          todayFollowups,
+          overdueFollowups,
+          upcomingFollowups,
+        },
+        statusBreakdown,
+        branchBreakdown,
+        cityBreakdown,
+        stateBreakdown,
+        availableLocations: {
+          cities: distinctCities.filter(Boolean).sort(),
+          states: distinctStates.filter(Boolean).sort(),
+        },
+        dailyActivity,
+        leaderboard,
+        telecallers: allTelecallers
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get Telecaller Drilldown Leads List
+// @route   GET /api/v1/reports/telecaller-drilldown
+// @access  Private (superAdmin, admin, branchManager)
+export const getTelecallerDrilldown = async (req, res, next) => {
+  try {
+    const { telecallerId, metricType, statusValue, timeframe, startDate, endDate, branchId, search, city, state, pinCode, location } = req.query;
+
+    const query = {};
+
+    // 1. Telecaller condition
+    if (telecallerId && telecallerId !== 'all') {
+      if (mongoose.Types.ObjectId.isValid(telecallerId)) {
+        const tId = new mongoose.Types.ObjectId(telecallerId);
+        query.$or = [
+          { originTelecaller: tId },
+          { assignedTo: tId },
+          { 'remarks.addedBy': tId }
+        ];
+      }
+    }
+
+    // 2. Metric / KPI Type condition
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(now);
+    endOfToday.setHours(23, 59, 59, 999);
+
+    switch (metricType) {
+      case 'callsLogged':
+        query['remarks.0'] = { $exists: true };
+        break;
+      case 'qualified':
+      case 'handedOver':
+        query.$and = [
+          ...(query.$and || []),
+          {
+            $or: [
+              { status: 'assigned_to_branch' },
+              { assignedBranch: { $ne: null } }
+            ]
+          }
+        ];
+        break;
+      case 'converted':
+        query.$and = [
+          ...(query.$and || []),
+          {
+            $or: [
+              { status: { $in: ['converted', 'closed'] } },
+              { transferredToInstallation: true }
+            ]
+          }
+        ];
+        break;
+      case 'pendingFollowups':
+        query.followUpDate = { $ne: null };
+        query.status = { $nin: ['converted', 'closed'] };
+        break;
+      case 'todayFollowups':
+        query.followUpDate = { $gte: startOfToday, $lte: endOfToday };
+        query.status = { $nin: ['converted', 'closed'] };
+        break;
+      case 'overdueFollowups':
+        query.followUpDate = { $lt: startOfToday };
+        query.status = { $nin: ['converted', 'closed', 'assigned_to_branch'] };
+        break;
+      case 'status':
+        if (statusValue) {
+          query.status = statusValue;
+        }
+        break;
+      default:
+        // 'totalLeads' - no extra metric condition
+        break;
+    }
+
+    // 3. Date range
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) {
+        const s = new Date(startDate);
+        s.setHours(0, 0, 0, 0);
+        query.createdAt.$gte = s;
+      }
+      if (endDate) {
+        const e = new Date(endDate);
+        e.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = e;
+      }
+    } else if (timeframe && timeframe !== 'allTime') {
+      if (timeframe === 'today') {
+        query.createdAt = { $gte: startOfToday, $lte: endOfToday };
+      } else if (timeframe === 'thisWeek') {
+        const s = new Date(now);
+        s.setDate(now.getDate() - now.getDay());
+        s.setHours(0, 0, 0, 0);
+        query.createdAt = { $gte: s };
+      } else if (timeframe === 'thisMonth') {
+        const s = new Date(now.getFullYear(), now.getMonth(), 1);
+        s.setHours(0, 0, 0, 0);
+        query.createdAt = { $gte: s };
+      } else if (timeframe === 'thisYear') {
+        const s = new Date(now.getFullYear(), 0, 1);
+        s.setHours(0, 0, 0, 0);
+        query.createdAt = { $gte: s };
+      }
+    }
+
+    // 4. Branch filter
+    if (branchId && mongoose.Types.ObjectId.isValid(branchId)) {
+      query.assignedBranch = new mongoose.Types.ObjectId(branchId);
+    }
+
+    // Location Filters for Drilldown
+    if (state && state.trim()) {
+      query.state = { $regex: new RegExp(`^${state.trim()}$`, 'i') };
+    }
+    if (city && city.trim()) {
+      query.city = { $regex: new RegExp(`^${city.trim()}$`, 'i') };
+    }
+    if (pinCode && pinCode.trim()) {
+      query.pinCode = pinCode.trim();
+    }
+    if (location && location.trim()) {
+      const locRegex = { $regex: location.trim(), $options: 'i' };
+      const locConds = [
+        { city: locRegex },
+        { state: locRegex },
+        { pinCode: locRegex },
+        { address: locRegex }
+      ];
+      if (query.$and) {
+        query.$and.push({ $or: locConds });
+      } else {
+        query.$and = [{ $or: locConds }];
+      }
+    }
+
+    // 5. Search
+    if (search) {
+      const searchCond = [
+        { name: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { city: { $regex: search, $options: 'i' } }
+      ];
+      if (query.$and) {
+        query.$and.push({ $or: searchCond });
+      } else {
+        query.$and = [{ $or: searchCond }];
+      }
+    }
+
+    const leads = await Lead.find(query)
+      .populate('originTelecaller', 'name email phone')
+      .populate('assignedTo', 'name email phone role')
+      .populate('assignedBranch', 'name city state')
+      .populate('remarks.addedBy', 'name email role')
+      .sort({ createdAt: -1 })
+      .limit(300)
+      .lean();
+
+    res.status(200).json({
+      status: 'success',
+      count: leads.length,
+      data: leads
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+

@@ -1013,3 +1013,454 @@ export const actionStockDeleteRequest = async (req, res, next) => {
   }
 };
 
+// @desc    Get Comprehensive Stock & Inventory Analytics Report
+// @route   GET /api/v1/stock/reports/analytics
+// @access  Private (superAdmin, admin, stock)
+export const getStockAnalytics = async (req, res, next) => {
+  try {
+    const { warehouseId, categoryId, brandId, city, stockStatus, timeframe, startDate, endDate, search } = req.query;
+
+    // 1. Fetch metadata (warehouses, categories, brands)
+    const [warehouses, categories, brands] = await Promise.all([
+      Warehouse.find({ status: 'active' }).select('name code city managerName phone status').lean(),
+      Category.find({ status: 'active' }).select('name code description').lean(),
+      Brand.find({ status: 'active' }).select('name code description').lean()
+    ]);
+
+    // Distinct cities from active warehouses
+    const distinctCities = [...new Set(warehouses.map(w => w.city).filter(Boolean))].sort();
+
+    // 2. Build Product query
+    const productQuery = { status: 'active' };
+
+    if (categoryId && categoryId !== 'all') {
+      productQuery.category = categoryId;
+    }
+    if (brandId && brandId !== 'all') {
+      productQuery.brand = brandId;
+    }
+
+    if (search && search.trim()) {
+      const s = search.trim();
+      productQuery.$or = [
+        { name: { $regex: s, $options: 'i' } },
+        { sku: { $regex: s, $options: 'i' } },
+        { description: { $regex: s, $options: 'i' } }
+      ];
+    }
+
+    // Warehouse or city filter:
+    let filteredWarehouseIds = null;
+    if (warehouseId && warehouseId !== 'all') {
+      filteredWarehouseIds = [warehouseId.toString()];
+    } else if (city && city.trim()) {
+      filteredWarehouseIds = warehouses
+        .filter(w => w.city && w.city.toLowerCase() === city.trim().toLowerCase())
+        .map(w => w._id.toString());
+    }
+
+    const products = await Product.find(productQuery)
+      .populate('category', 'name code')
+      .populate('brand', 'name code')
+      .populate('unit', 'name shortName')
+      .populate('warehouseStock.warehouse', 'name code city')
+      .lean();
+
+    // 3. Date filter for Stock Movements
+    const now = new Date();
+    let movementDateFilter = null;
+    if (startDate || endDate) {
+      movementDateFilter = {};
+      if (startDate) {
+        const s = new Date(startDate);
+        s.setHours(0, 0, 0, 0);
+        movementDateFilter.$gte = s;
+      }
+      if (endDate) {
+        const e = new Date(endDate);
+        e.setHours(23, 59, 59, 999);
+        movementDateFilter.$lte = e;
+      }
+    } else if (timeframe && timeframe !== 'allTime') {
+      movementDateFilter = {};
+      if (timeframe === 'today') {
+        const s = new Date(now);
+        s.setHours(0, 0, 0, 0);
+        const e = new Date(now);
+        e.setHours(23, 59, 59, 999);
+        movementDateFilter.$gte = s;
+        movementDateFilter.$lte = e;
+      } else if (timeframe === 'thisWeek') {
+        const s = new Date(now);
+        s.setDate(now.getDate() - now.getDay());
+        s.setHours(0, 0, 0, 0);
+        movementDateFilter.$gte = s;
+      } else if (timeframe === 'thisMonth') {
+        const s = new Date(now.getFullYear(), now.getMonth(), 1);
+        s.setHours(0, 0, 0, 0);
+        movementDateFilter.$gte = s;
+      } else if (timeframe === 'thisYear') {
+        const s = new Date(now.getFullYear(), 0, 1);
+        s.setHours(0, 0, 0, 0);
+        movementDateFilter.$gte = s;
+      }
+    }
+
+    const movementQuery = {};
+    if (movementDateFilter) {
+      movementQuery.createdAt = movementDateFilter;
+    }
+    if (filteredWarehouseIds && filteredWarehouseIds.length > 0) {
+      movementQuery.warehouse = { $in: filteredWarehouseIds };
+    }
+
+    const movements = await StockMovement.find(movementQuery)
+      .populate('product', 'name sku currentStock')
+      .populate('warehouse', 'name city')
+      .lean();
+
+    // 4. Calculate Aggregate Product Metrics
+    let totalStockQuantity = 0;
+    let totalStockValuation = 0;
+    let totalRetailValuation = 0;
+    let inStockCount = 0;
+    let lowStockCount = 0;
+    let outOfStockCount = 0;
+
+    const categoryBreakdown = {};
+    const brandBreakdown = {};
+    const warehouseStockMap = new Map();
+
+    warehouses.forEach(w => {
+      warehouseStockMap.set(w._id.toString(), {
+        _id: w._id,
+        name: w.name,
+        code: w.code,
+        city: w.city || 'N/A',
+        managerName: w.managerName || 'N/A',
+        phone: w.phone || '',
+        totalProducts: 0,
+        totalStock: 0,
+        totalValuation: 0,
+        lowStockCount: 0,
+        outOfStockCount: 0
+      });
+    });
+
+    products.forEach(p => {
+      let effectiveStock = p.currentStock || 0;
+      if (filteredWarehouseIds && filteredWarehouseIds.length > 0) {
+        if (Array.isArray(p.warehouseStock)) {
+          effectiveStock = p.warehouseStock
+            .filter(ws => ws.warehouse && filteredWarehouseIds.includes(ws.warehouse._id ? ws.warehouse._id.toString() : ws.warehouse.toString()))
+            .reduce((sum, ws) => sum + (ws.quantity || 0), 0);
+        } else {
+          effectiveStock = 0;
+        }
+      }
+
+      const pPrice = Number(p.purchasePrice) || 0;
+      const sPrice = Number(p.sellingPrice) || 0;
+      const minStock = Number(p.minStockLevel) || 5;
+
+      totalStockQuantity += effectiveStock;
+      totalStockValuation += effectiveStock * pPrice;
+      totalRetailValuation += effectiveStock * sPrice;
+
+      if (effectiveStock <= 0) {
+        outOfStockCount++;
+      } else if (effectiveStock <= minStock) {
+        lowStockCount++;
+      } else {
+        inStockCount++;
+      }
+
+      // Category breakdown
+      const catName = p.category?.name || 'Uncategorized';
+      if (!categoryBreakdown[catName]) {
+        categoryBreakdown[catName] = { count: 0, stockQuantity: 0, valuation: 0 };
+      }
+      categoryBreakdown[catName].count++;
+      categoryBreakdown[catName].stockQuantity += effectiveStock;
+      categoryBreakdown[catName].valuation += effectiveStock * pPrice;
+
+      // Brand breakdown
+      const brName = p.brand?.name || 'Unbranded';
+      if (!brandBreakdown[brName]) {
+        brandBreakdown[brName] = { count: 0, stockQuantity: 0, valuation: 0 };
+      }
+      brandBreakdown[brName].count++;
+      brandBreakdown[brName].stockQuantity += effectiveStock;
+      brandBreakdown[brName].valuation += effectiveStock * pPrice;
+
+      // Warehouse stock allocation
+      if (Array.isArray(p.warehouseStock)) {
+        p.warehouseStock.forEach(ws => {
+          if (ws.warehouse) {
+            const wId = ws.warehouse._id ? ws.warehouse._id.toString() : ws.warehouse.toString();
+            if (warehouseStockMap.has(wId)) {
+              const wStats = warehouseStockMap.get(wId);
+              const q = ws.quantity || 0;
+              if (q > 0) {
+                wStats.totalProducts++;
+                wStats.totalStock += q;
+                wStats.totalValuation += q * pPrice;
+              }
+              if (q <= 0) {
+                wStats.outOfStockCount++;
+              } else if (q <= minStock) {
+                wStats.lowStockCount++;
+              }
+            }
+          }
+        });
+      }
+    });
+
+    // 5. Movements Aggregation (Stock In vs Stock Out)
+    let stockInQuantity = 0;
+    let stockOutQuantity = 0;
+    let stockInValue = 0;
+    let stockOutValue = 0;
+
+    movements.forEach(m => {
+      const q = Math.abs(Number(m.quantity) || 0);
+      const val = Number(m.totalPrice) || (q * (Number(m.unitPrice) || 0));
+
+      if (['stock_in', 'purchase', 'opening_stock'].includes(m.transactionType)) {
+        stockInQuantity += q;
+        stockInValue += val;
+      } else if (m.transactionType === 'stock_out') {
+        stockOutQuantity += q;
+        stockOutValue += val;
+      }
+    });
+
+    // 6. 7-Day Movement Trend
+    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dailyMovementTrend = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dayName = daysOfWeek[d.getDay()];
+      const dateStr = d.toISOString().split('T')[0];
+
+      let dayIn = 0;
+      let dayOut = 0;
+
+      movements.forEach(m => {
+        if (m.createdAt && new Date(m.createdAt).toISOString().split('T')[0] === dateStr) {
+          const q = Math.abs(Number(m.quantity) || 0);
+          if (['stock_in', 'purchase', 'opening_stock'].includes(m.transactionType)) {
+            dayIn += q;
+          } else if (m.transactionType === 'stock_out') {
+            dayOut += q;
+          }
+        }
+      });
+
+      dailyMovementTrend.push({
+        day: dayName,
+        date: dateStr,
+        stockIn: dayIn,
+        stockOut: dayOut
+      });
+    }
+
+    // 7. City breakdown of warehouses
+    const cityBreakdown = {};
+    warehouseStockMap.forEach(w => {
+      if (w.city && w.city !== 'N/A') {
+        cityBreakdown[w.city] = (cityBreakdown[w.city] || 0) + w.totalStock;
+      }
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        summary: {
+          totalProducts: products.length,
+          totalStockQuantity,
+          totalStockValuation,
+          totalRetailValuation,
+          inStockCount,
+          lowStockCount,
+          outOfStockCount,
+          totalWarehouses: warehouses.length,
+          totalMovements: movements.length,
+          stockInQuantity,
+          stockOutQuantity,
+          stockInValue,
+          stockOutValue
+        },
+        categoryBreakdown,
+        brandBreakdown,
+        warehouseBreakdown: Array.from(warehouseStockMap.values()).sort((a, b) => b.totalStock - a.totalStock),
+        cityBreakdown,
+        availableLocations: {
+          cities: distinctCities
+        },
+        dailyMovementTrend,
+        warehouses,
+        categories,
+        brands
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get Stock Drilldown Products or Movements
+// @route   GET /api/v1/stock/reports/drilldown
+// @access  Private (superAdmin, admin, stock)
+export const getStockDrilldown = async (req, res, next) => {
+  try {
+    const { metricType, warehouseId, categoryId, brandId, city, search, stockStatus, timeframe, startDate, endDate } = req.query;
+
+    // Check if drilling down into movements or products
+    if (metricType === 'stockIn' || metricType === 'stockOut') {
+      const movementQuery = {};
+      if (metricType === 'stockIn') {
+        movementQuery.transactionType = { $in: ['stock_in', 'purchase', 'opening_stock'] };
+      } else {
+        movementQuery.transactionType = 'stock_out';
+      }
+
+      if (warehouseId && warehouseId !== 'all') {
+        movementQuery.warehouse = warehouseId;
+      }
+
+      // Date range
+      const now = new Date();
+      if (startDate || endDate) {
+        movementQuery.createdAt = {};
+        if (startDate) {
+          const s = new Date(startDate);
+          s.setHours(0, 0, 0, 0);
+          movementQuery.createdAt.$gte = s;
+        }
+        if (endDate) {
+          const e = new Date(endDate);
+          e.setHours(23, 59, 59, 999);
+          movementQuery.createdAt.$lte = e;
+        }
+      }
+
+      const movements = await StockMovement.find(movementQuery)
+        .populate('product', 'name sku currentStock purchasePrice sellingPrice unit')
+        .populate('warehouse', 'name code city')
+        .populate('salesPerson', 'name email phone')
+        .sort({ createdAt: -1 })
+        .limit(300)
+        .lean();
+
+      return res.status(200).json({
+        status: 'success',
+        drilldownType: 'movement',
+        count: movements.length,
+        data: movements
+      });
+    }
+
+    // Otherwise Products Drilldown
+    const productQuery = { status: 'active' };
+
+    if (categoryId && categoryId !== 'all') {
+      productQuery.category = categoryId;
+    }
+    if (brandId && brandId !== 'all') {
+      productQuery.brand = brandId;
+    }
+
+    if (search && search.trim()) {
+      const s = search.trim();
+      productQuery.$or = [
+        { name: { $regex: s, $options: 'i' } },
+        { sku: { $regex: s, $options: 'i' } },
+        { description: { $regex: s, $options: 'i' } }
+      ];
+    }
+
+    let products = await Product.find(productQuery)
+      .populate('category', 'name code')
+      .populate('brand', 'name code')
+      .populate('unit', 'name shortName')
+      .populate('warehouseStock.warehouse', 'name code city')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Filter by warehouse or city if specified
+    if (warehouseId && warehouseId !== 'all') {
+      products = products.filter(p => {
+        if (!Array.isArray(p.warehouseStock)) return false;
+        return p.warehouseStock.some(ws => ws.warehouse && (ws.warehouse._id ? ws.warehouse._id.toString() : ws.warehouse.toString()) === warehouseId);
+      });
+    } else if (city && city.trim()) {
+      products = products.filter(p => {
+        if (!Array.isArray(p.warehouseStock)) return false;
+        return p.warehouseStock.some(ws => ws.warehouse && ws.warehouse.city && ws.warehouse.city.toLowerCase() === city.trim().toLowerCase());
+      });
+    }
+
+    // Filter by metricType or stockStatus
+    const effectiveFilter = metricType || stockStatus;
+    if (effectiveFilter === 'outOfStock') {
+      products = products.filter(p => (p.currentStock || 0) <= 0);
+    } else if (effectiveFilter === 'lowStock') {
+      products = products.filter(p => (p.currentStock || 0) > 0 && (p.currentStock || 0) <= (p.minStockLevel || 5));
+    } else if (effectiveFilter === 'inStock') {
+      products = products.filter(p => (p.currentStock || 0) > (p.minStockLevel || 5));
+    }
+
+    res.status(200).json({
+      status: 'success',
+      drilldownType: 'product',
+      count: products.length,
+      data: products
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get Stock Movement Ledger for single product
+// @route   GET /api/v1/stock/reports/product-movements/:productId
+// @access  Private
+export const getProductMovementLedger = async (req, res, next) => {
+  try {
+    const { productId } = req.params;
+
+    const [product, movements] = await Promise.all([
+      Product.findById(productId)
+        .populate('category', 'name')
+        .populate('brand', 'name')
+        .populate('unit', 'name shortName')
+        .lean(),
+      StockMovement.find({ product: productId })
+        .populate('warehouse', 'name code city')
+        .populate('salesPerson', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean()
+    ]);
+
+    if (!product) {
+      return res.status(404).json({ status: 'fail', message: 'Product not found' });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        product,
+        movements
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+

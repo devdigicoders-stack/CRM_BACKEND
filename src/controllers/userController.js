@@ -96,6 +96,32 @@ export const getSalesUsers = async (req, res, next) => {
   }
 };
 
+// @desc    Get telecaller users list (for dropdowns and reports)
+// @route   GET /api/v1/users/telecaller-list
+// @access  Private (all logged in users)
+export const getTelecallerUsers = async (req, res, next) => {
+  try {
+    const query = { role: { $in: ['telecaller', 'calling', 'crmuser'] } };
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      query._id = { $in: branchUserIds };
+    }
+    const users = await User.find(query)
+      .select('name email phone role active profilePic')
+      .sort({ name: 1 })
+      .lean();
+
+    res.status(200).json({
+      status: 'success',
+      results: users.length,
+      data: { users },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Get installation users (for accountant to assign installer)
 // @route   GET /api/v1/users/installers
 // @access  Private (superAdmin, admin, accountant)
