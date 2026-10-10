@@ -329,7 +329,15 @@ export const getLeads = async (req, res, next) => {
       }
     }
     if (isCallDone !== undefined) {
-      query.isCallDone = isCallDone === 'true';
+      if (isCallDone === 'true') {
+        query.isCallDone = true;
+      } else {
+        query.$or = [
+          { isCallDone: false },
+          { isCallDone: { $exists: false } },
+          { isCallDone: null },
+        ];
+      }
     }
     if (isReassigned !== undefined) {
       query.isReassigned = isReassigned === 'true';
@@ -650,6 +658,7 @@ export const assignLead = async (req, res, next) => {
     lead.assignedBy = req.user._id;
     lead.assignedByModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
     lead.status = 'assigned';
+    lead.isCallDone = false;
     lead.isReassigned = wasReassigned;
     if (wasReassigned) {
       lead.reassignedAt = new Date();
@@ -1783,6 +1792,7 @@ export const bulkReassignLeads = async (req, res, next) => {
               assignedBy: req.user._id,
               assignedByModel,
               status: 'assigned',
+              isCallDone: false,
               isReassigned: wasReassigned,
               ...(wasReassigned ? { reassignedAt: now } : {}),
             },
@@ -1997,6 +2007,7 @@ export const qualifyAndAssignBranch = async (req, res, next) => {
     }
 
     lead.status = 'assigned_to_branch';
+    lead.isCallDone = false;
 
     // Increment reassignment count & lock if >= 1
     lead.reassignmentCount = (lead.reassignmentCount || 0) + 1;
@@ -2051,7 +2062,7 @@ export const logTelecallerCall = async (req, res, next) => {
     if (callStatus) {
       lead.status = callStatus;
     }
-    lead.isCallDone = true;
+    lead.isCallDone = false;
 
     if (followUpDate) {
       lead.followUpDate = new Date(followUpDate);

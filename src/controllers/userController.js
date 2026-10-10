@@ -600,9 +600,8 @@ export const getUserHistory = async (req, res, next) => {
     const totalLeads = await Lead.countDocuments(leadMatchQuery);
     const convertedLeads = await Lead.countDocuments({ ...leadMatchQuery, status: { $in: ['converted', 'closed'] } });
     
-    // Call Done = Leads with at least 1 remark. Pending Calls = Leads with 0 remarks.
-    // For single user history, we can check where `remarks.0` exists
-    const callDoneLeads = await Lead.countDocuments({ ...leadMatchQuery, 'remarks.0': { $exists: true } });
+    // Call Done = Leads with isCallDone true. Pending Calls = Leads with isCallDone false.
+    const callDoneLeads = await Lead.countDocuments({ ...leadMatchQuery, isCallDone: true });
     const pendingLeads = totalLeads - callDoneLeads;
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
@@ -753,12 +752,12 @@ export const getUsersTrackingSummary = async (req, res, next) => {
           },
           pendingLeads: {
             $sum: {
-              $cond: [{ $eq: [{ $size: { $ifNull: ['$remarks', []] } }, 0] }, 1, 0]
+              $cond: [{ $eq: ['$isCallDone', true] }, 0, 1]
             }
           },
           callDoneLeads: {
             $sum: {
-              $cond: [{ $gt: [{ $size: { $ifNull: ['$remarks', []] } }, 0] }, 1, 0]
+              $cond: [{ $eq: ['$isCallDone', true] }, 1, 0]
             }
           }
         }
