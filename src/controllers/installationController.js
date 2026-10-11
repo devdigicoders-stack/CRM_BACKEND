@@ -72,9 +72,11 @@ export const getInstallationDashboard = async (req, res, next) => {
     const query = { transferredToInstallation: true };
 
     if (!['superAdmin', 'admin'].includes(req.user.role)) {
-      query.installationRep = new mongoose.Types.ObjectId(String(req.user._id));
-    } else {
-      query.installationRep = { $exists: true, $ne: null };
+      query.$or = [
+        { installationRep: new mongoose.Types.ObjectId(String(req.user._id)) },
+        { installationRep: null },
+        { installationRep: { $exists: false } }
+      ];
     }
 
     const totalAssigned = await Lead.countDocuments(query);
@@ -109,10 +111,16 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
   try {
     const { search, status, issueReported, overdue, page = 1, limit = 20 } = req.query;
 
-    const query = { transferredToInstallation: true };
+    const andConditions = [{ transferredToInstallation: true }];
 
     if (!['superAdmin', 'admin'].includes(req.user.role)) {
-      query.installationRep = new mongoose.Types.ObjectId(String(req.user._id));
+      andConditions.push({
+        $or: [
+          { installationRep: new mongoose.Types.ObjectId(String(req.user._id)) },
+          { installationRep: null },
+          { installationRep: { $exists: false } }
+        ]
+      });
     }
 
     if (search) {
@@ -134,8 +142,10 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
         orConditions.push({ phone: { $regex: flexibleRegex, $options: 'i' } });
       }
 
-      query.$or = orConditions;
+      andConditions.push({ $or: orConditions });
     }
+
+    const query = andConditions.length > 1 ? { $and: andConditions } : andConditions[0];
 
     if (status) query.installationStatus = status;
     if (issueReported) {
@@ -145,11 +155,14 @@ export const getAssignedInstallationLeads = async (req, res, next) => {
         query.installationIssueReported = false;
       } else if (issueReported === 'issue') {
         query.installationIssueReported = true;
-        query.$or = [
-          { installationIssueType: 'issue' },
-          { installationIssueType: { $exists: false } },
-          { installationIssueType: null }
-        ];
+        if (!query.$and) query.$and = [];
+        query.$and.push({
+          $or: [
+            { installationIssueType: 'issue' },
+            { installationIssueType: { $exists: false } },
+            { installationIssueType: null }
+          ]
+        });
       } else if (issueReported === 'delay') {
         query.installationIssueReported = true;
         query.installationIssueType = 'delay';
@@ -294,9 +307,14 @@ export const updateInstallationStatus = async (req, res, next) => {
     }
 
     const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
-    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId && repId !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
+    }
+
+    if (!lead.installationRep && req.user.role === 'installation') {
+      lead.installationRep = req.user._id;
+      lead.installationAssignedAt = new Date();
     }
 
     const normalizedStatus = status.toLowerCase();
@@ -377,9 +395,14 @@ export const uploadInstallationProof = async (req, res, next) => {
     }
 
     const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
-    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId && repId !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
+    }
+
+    if (!lead.installationRep && req.user.role === 'installation') {
+      lead.installationRep = req.user._id;
+      lead.installationAssignedAt = new Date();
     }
 
     lead.installationProofUrl = `/uploads/proofs/${req.file.filename}`;
@@ -428,9 +451,14 @@ export const reportInstallationIssue = async (req, res, next) => {
     }
 
     const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
-    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId && repId !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
+    }
+
+    if (!lead.installationRep && req.user.role === 'installation') {
+      lead.installationRep = req.user._id;
+      lead.installationAssignedAt = new Date();
     }
 
     const type = ['issue', 'delay'].includes(issueType?.toLowerCase()) ? issueType.toLowerCase() : 'issue';
@@ -472,7 +500,7 @@ export const resolveInstallationIssue = async (req, res, next) => {
     }
 
     const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
-    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId && repId !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
     }
@@ -511,7 +539,7 @@ export const deleteInstallationProof = async (req, res, next) => {
     }
 
     const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
-    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId && repId !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
     }
@@ -563,7 +591,7 @@ export const clearInTransitRemark = async (req, res, next) => {
     }
 
     const repId = lead.installationRep?._id ? lead.installationRep._id.toString() : lead.installationRep?.toString();
-    if (!['superAdmin', 'admin'].includes(req.user.role) && repId !== req.user._id.toString()) {
+    if (!['superAdmin', 'admin'].includes(req.user.role) && repId && repId !== req.user._id.toString()) {
       res.status(403);
       throw new Error('You do not have permission to modify this installation');
     }

@@ -650,6 +650,21 @@ export const approveInstallationTransfer = async (req, res, next) => {
     lead.transferApprovedBy = req.user._id;
     lead.transferApprovedAt = new Date();
     lead.status = 'in_process';
+    if (!lead.installationStatus) {
+      lead.installationStatus = 'assigned';
+    }
+
+    if (req.body.installerId) {
+      lead.installationRep = req.body.installerId;
+      lead.installationAssignedAt = new Date();
+      const installerUser = await User.findById(req.body.installerId).select('name').lean();
+      if (installerUser) {
+        lead.remarks.push({
+          note: `[SuperAdmin] Assigned lead to installer: ${installerUser.name}`,
+          addedBy: req.user._id
+        });
+      }
+    }
     
     lead.remarks.push({
       note: `[SuperAdmin] Approved Installation Transfer and deducted stock from warehouse "${warehouse.name} (${warehouse.code || 'WH'})".${approvalRemarks ? ` Remarks: ${approvalRemarks}` : ''}`,
