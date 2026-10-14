@@ -207,6 +207,15 @@ const leadSchema = new mongoose.Schema(
       enum: ['pending', 'verified', 'rejected'],
       default: 'pending',
     },
+    verifiedAt: {
+      type: Date,
+      default: null,
+    },
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     accountRemarks: {
       type: String,
       trim: true,
@@ -328,6 +337,14 @@ const leadSchema = new mongoose.Schema(
       default: 0,
     },
     pendingAmount: {
+      type: Number,
+      default: 0,
+    },
+    isBookingAmount: {
+      type: Boolean,
+      default: false,
+    },
+    bookingAmount: {
       type: Number,
       default: 0,
     },

@@ -1,4 +1,5 @@
 import { Lead } from '../models/Lead.js';
+import { getSalesRevenueMetrics, getApprovedSalesLeads } from '../utils/salesMetricsHelper.js';
 
 // Helper to format lead response with helper integration links
 const formatLeadWithIntegrations = (lead) => {
@@ -177,6 +178,21 @@ export const getDashboardStats = async (req, res, next) => {
       }
     });
 
+    // Real-time sales count & revenue (counted after accounts verification & super admin approval)
+    let salesScopeQuery = {};
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      salesScopeQuery.$or = [
+        { assignedTo: { $in: branchUserIds } },
+        { createdBy: { $in: branchUserIds } }
+      ];
+    }
+    const salesRevenue = await getSalesRevenueMetrics({
+      scopeQuery: salesScopeQuery,
+      date: date || null
+    });
+
     res.status(200).json({
       status: 'success',
       data: {
@@ -195,7 +211,56 @@ export const getDashboardStats = async (req, res, next) => {
           byStatus: statsByStatus,
           byPriority: statsByPriority,
         },
+        salesRevenue,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get detailed real-time sales & revenue analytics (day-wise and month-wise)
+// @route   GET /api/v1/dashboard/sales-revenue
+// @access  Private (Super Admin, Admin, Accountant, BranchManager)
+export const getSalesRevenueAnalytics = async (req, res, next) => {
+  try {
+    const { date, startDate, endDate, month, search, page, limit, details } = req.query;
+
+    let scopeQuery = {};
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      scopeQuery.$or = [
+        { assignedTo: { $in: branchUserIds } },
+        { createdBy: { $in: branchUserIds } }
+      ];
+    }
+
+    const metrics = await getSalesRevenueMetrics({
+      scopeQuery,
+      date: date || null,
+      startDate: startDate || null,
+      endDate: endDate || null
+    });
+
+    let leadDetails = null;
+    if (details === 'true' || date || month) {
+      leadDetails = await getApprovedSalesLeads({
+        scopeQuery,
+        date: date || null,
+        month: month || null,
+        search: search || '',
+        page: page || 1,
+        limit: limit || 20
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        metrics,
+        leads: leadDetails
+      }
     });
   } catch (error) {
     next(error);

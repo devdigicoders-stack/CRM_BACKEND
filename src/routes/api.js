@@ -60,6 +60,7 @@ apiRouter.put('/leads/:id/delivery', protect, checkPermission('leads'), leadCont
 
 // --- Dashboard Routes ---
 apiRouter.get('/dashboard/stats', protect, checkPermission('dashboard'), dashboardController.getDashboardStats);
+apiRouter.get('/dashboard/sales-revenue', protect, restrictTo('superAdmin', 'admin', 'accountant', 'branchManager'), dashboardController.getSalesRevenueAnalytics);
 apiRouter.get('/dashboard/reminders/today', protect, checkPermission('dashboard'), dashboardController.getTodayReminders);
 apiRouter.get('/dashboard/reminders/missed', protect, checkPermission('dashboard'), dashboardController.getMissedFollowUps);
 apiRouter.get('/dashboard/performance', protect, restrictTo('superAdmin', 'admin', 'manager', 'branchManager'), checkPermission('dashboard'), dashboardController.getPerformanceAnalytics);
@@ -99,6 +100,7 @@ apiRouter.get('/reports/telecaller-drilldown', protect, restrictTo('superAdmin',
 
 // --- Accounts (Accountant Panel) Routes ---
 apiRouter.get('/accounts/dashboard', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.getAccountDashboard);
+apiRouter.get('/accounts/sales-revenue', protect, restrictTo('superAdmin', 'admin', 'accountant'), accountsController.getSalesRevenueAnalytics);
 apiRouter.get('/accounts/leads', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.getClosedWonLeads);
 apiRouter.get('/accounts/transfer-requests', protect, restrictTo('superAdmin', 'admin', 'accountant'), accountsController.getTransferRequests);
 apiRouter.put('/accounts/leads/:id/verify', protect, restrictTo('superAdmin', 'admin', 'accountant'), checkPermission('accounts'), accountsController.verifySale);

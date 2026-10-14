@@ -10,6 +10,7 @@ import { StockMovement } from '../models/StockMovement.js';
 import { Notification } from '../models/Notification.js';
 import { sendPushNotification } from '../config/firebase.js';
 import { notifyUser, notifyRoles, notifySuperAdminAndAdmins } from '../services/notificationService.js';
+import { getSalesRevenueMetrics, getApprovedSalesLeads } from '../utils/salesMetricsHelper.js';
 
 const sendNotification = async (recipientId, title, message, leadId) => {
   try {
@@ -47,13 +48,14 @@ export const uploadInvoiceMiddleware = multer({ storage, fileFilter, limits: { f
 
 const formatLeadWithIntegrations = (lead) => {
   const leadObj = lead.toObject ? lead.toObject() : lead;
-  const cleanedPhone = leadObj.phone.replace(/\D/g, '');
+  const rawPhone = leadObj.phone || '';
+  const cleanedPhone = rawPhone.replace(/\D/g, '');
   const phoneWithCountry = cleanedPhone.length === 10 ? `91${cleanedPhone}` : cleanedPhone;
   return {
     ...leadObj,
     integrations: {
-      whatsappLink: `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(`Hello ${leadObj.name}, `)}`,
-      callUri: `tel:${leadObj.phone}`,
+      whatsappLink: `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(`Hello ${leadObj.name || ''}, `)}`,
+      callUri: `tel:${leadObj.phone || ''}`,
     },
   };
 };
@@ -62,6 +64,7 @@ const statsKeyExists = (key, obj) => Object.prototype.hasOwnProperty.call(obj, k
 
 export const getAccountDashboard = async (req, res, next) => {
   try {
+    const { date, startDate, endDate } = req.query;
     const totalClosedWon = await Lead.countDocuments({ transferredToAccounts: true, status: { $in: ['converted', 'closed'] } });
     const pendingVerification = await Lead.countDocuments({ transferredToAccounts: true, status: { $in: ['converted', 'closed'] }, verificationStatus: 'pending' });
     const verifiedSales = await Lead.countDocuments({ transferredToAccounts: true, status: { $in: ['converted', 'closed'] }, verificationStatus: 'verified' });
@@ -74,7 +77,58 @@ export const getAccountDashboard = async (req, res, next) => {
     paymentStatusBreakdown.forEach((item) => {
       if (item._id && statsKeyExists(item._id, paymentStats)) paymentStats[item._id] = item.count;
     });
-    res.status(200).json({ status: 'success', data: { totalClosedWon, pendingVerification, verifiedSales, rejectedSales, paymentStatusBreakdown: paymentStats } });
+
+    // Real-time sales count & revenue (counted after accounts verification & super admin approval)
+    const salesRevenue = await getSalesRevenueMetrics({
+      date: date || null,
+      startDate: startDate || null,
+      endDate: endDate || null
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        totalClosedWon,
+        pendingVerification,
+        verifiedSales,
+        rejectedSales,
+        paymentStatusBreakdown: paymentStats,
+        salesRevenue
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSalesRevenueAnalytics = async (req, res, next) => {
+  try {
+    const { date, startDate, endDate, month, search, page, limit, details } = req.query;
+
+    const metrics = await getSalesRevenueMetrics({
+      date: date || null,
+      startDate: startDate || null,
+      endDate: endDate || null
+    });
+
+    let leadDetails = null;
+    if (details === 'true' || date || month) {
+      leadDetails = await getApprovedSalesLeads({
+        date: date || null,
+        month: month || null,
+        search: search || '',
+        page: page || 1,
+        limit: limit || 20
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        metrics,
+        leads: leadDetails
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -170,6 +224,10 @@ export const verifySale = async (req, res, next) => {
       throw new Error('Only closed won (converted/closed) sales can be verified');
     }
     lead.verificationStatus = verificationStatus;
+    if (verificationStatus === 'verified') {
+      lead.verifiedAt = new Date();
+      lead.verifiedBy = req.user._id;
+    }
     if (remarks) lead.accountRemarks = remarks;
     lead.remarks.push({
       note: `[Accounts Team] Sale ${verificationStatus === 'verified' ? 'Approved & Verified' : 'Rejected'}. Remarks: ${remarks || 'None'}`,
@@ -178,6 +236,8 @@ export const verifySale = async (req, res, next) => {
     if (verificationStatus === 'rejected') {
       lead.status = 'assigned';
       lead.transferredToAccounts = false;
+      lead.verifiedAt = null;
+      lead.verifiedBy = null;
     }
     const updatedLead = await lead.save();
 
@@ -430,15 +490,28 @@ export const getTransferRequests = async (req, res, next) => {
 
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const matchingUsers = await User.find({ name: { $regex: escaped, $options: 'i' } }).select('_id');
+      const matchingAdmins = await Admin.find({ name: { $regex: escaped, $options: 'i' } }).select('_id');
+      const staffIds = [...matchingUsers.map(u => u._id), ...matchingAdmins.map(a => a._id)];
+
       query.$or = [
         { name: { $regex: escaped, $options: 'i' } },
         { phone: { $regex: escaped, $options: 'i' } },
-        { awbNumber: { $regex: escaped, $options: 'i' } }
+        { awbNumber: { $regex: escaped, $options: 'i' } },
+        ...(staffIds.length > 0 ? [
+          { assignedTo: { $in: staffIds } },
+          { originTelecaller: { $in: staffIds } },
+          { branchOwner: { $in: staffIds } },
+          { transferRequestedBy: { $in: staffIds } }
+        ] : [])
       ];
     }
 
     const leads = await Lead.find(query)
       .populate('assignedTo', 'name email role phone')
+      .populate('originTelecaller', 'name email role phone')
+      .populate('branchOwner', 'name email role phone')
+      .populate('assignedBranch', 'name branchCode')
       .populate('transferRequestedBy', 'name email role phone')
       .populate('transferApprovedBy', 'name email role phone')
       .populate('dispatchWarehouse', 'name code city address managerName phone')
@@ -515,8 +588,25 @@ export const getTransferRequests = async (req, res, next) => {
         });
       }
 
+      const dealValue = Number(l.dealValue) || 0;
+      const rawPaid = l.amountPaid !== undefined && l.amountPaid !== null ? Number(l.amountPaid) : null;
+      const rawPending = l.pendingAmount !== undefined && l.pendingAmount !== null && !isNaN(l.pendingAmount) ? Number(l.pendingAmount) : null;
+      const amountPaid = rawPaid !== null ? rawPaid : (rawPending !== null && dealValue ? Math.max(0, dealValue - rawPending) : 0);
+      const pendingAmount = rawPending !== null ? rawPending : Math.max(0, dealValue - amountPaid);
+      const salesPersonObj = l.assignedTo || l.branchOwner || l.originTelecaller || null;
+      const salesPersonName = salesPersonObj?.name || 'Unassigned';
+
       return {
         ...formatLeadWithIntegrations(l),
+        dealValue,
+        amountPaid,
+        pendingAmount,
+        isBookingAmount: Boolean(l.isBookingAmount),
+        bookingAmount: Number(l.bookingAmount) || 0,
+        salesPerson: salesPersonObj,
+        salesPersonName,
+        invoiceUrl: l.invoiceUrl || null,
+        invoiceNumber: l.awbNumber || null,
         stockCheck: {
           allAvailable,
           items: stockCheckItems,

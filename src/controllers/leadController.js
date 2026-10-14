@@ -1186,6 +1186,9 @@ export const confirmSale = async (req, res, next) => {
     lead.dealValue = dealValue;
     lead.amountPaid = amountPaid;
     lead.pendingAmount = pendingAmount;
+    const isBookingAmount = req.body.isBookingAmount === 'true' || req.body.isBookingAmount === true;
+    lead.isBookingAmount = isBookingAmount;
+    lead.bookingAmount = isBookingAmount ? (Number(req.body.bookingAmount) || amountPaid) : 0;
     if (accountRemarks) lead.accountRemarks = accountRemarks;
 
     if (req.files) {
@@ -1207,7 +1210,7 @@ export const confirmSale = async (req, res, next) => {
     // Set status to converted (Closed Won)
     lead.status = 'converted';
 
-    let remarkNote = `[Sales Rep] Mark Lead as Sale Confirmed (Closed Won).`;
+    let remarkNote = `[Sales Rep] Mark Lead as Sale Confirmed (Closed Won).${isBookingAmount ? ` [Booking Amount / टोकन राशि: ₹${lead.bookingAmount}]` : ''}`;
 
     if (transferToAccounts === true) {
       lead.transferredToAccounts = true;
@@ -1221,7 +1224,7 @@ export const confirmSale = async (req, res, next) => {
         await sendNotification(
           admin._id,
           '💰 New Sale Confirmed',
-          `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko transfer ho gayi by ${req.user.name}`,
+          `Lead "${lead.name}" ki sale confirm ho gayi${isBookingAmount ? ' (Booking Amount)' : ''} aur accounts team ko transfer ho gayi by ${req.user.name}`,
           lead._id
         ).catch(err => console.error(err));
       }
@@ -1232,7 +1235,7 @@ export const confirmSale = async (req, res, next) => {
         await sendNotification(
           acc._id,
           '💰 New Sale Confirmed',
-          `Lead "${lead.name}" ki sale confirm ho gayi aur accounts team ko transfer ho gayi by ${req.user.name}`,
+          `Lead "${lead.name}" ki sale confirm ho gayi${isBookingAmount ? ' (Booking Amount)' : ''} aur accounts team ko transfer ho gayi by ${req.user.name}`,
           lead._id
         ).catch(err => console.error(err));
       }
