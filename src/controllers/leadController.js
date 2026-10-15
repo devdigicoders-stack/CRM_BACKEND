@@ -92,6 +92,10 @@ export const createLead = async (req, res, next) => {
       leadData.assignedToModel = assigneeModel;
       leadData.assignedBy = req.user._id;
       leadData.assignedByModel = creatorModel;
+      leadData.assignedAt = new Date();
+      if (targetUser && ['calling', 'telecaller'].includes(targetUser.role)) {
+        leadData.originTelecaller = finalAssignedTo;
+      }
     }
 
     // If an initial remark is provided, add it
@@ -164,7 +168,12 @@ export const checkPhoneExists = async (req, res, next) => {
     }
 
     const lead = await Lead.findOne(query)
-      .populate('assignedTo', 'name email role')
+      .populate('assignedTo', 'name email role phone')
+      .populate('originTelecaller', 'name email role')
+      .populate('branchOwner', 'name email role')
+      .populate('assignedBranch', 'name city state')
+      .populate('assignedBy', 'name email role')
+      .populate('createdBy', 'name email role')
       .lean();
 
     if (!lead) {
@@ -174,6 +183,9 @@ export const checkPhoneExists = async (req, res, next) => {
       });
     }
 
+    const assignedEmployee = lead.assignedTo || lead.branchOwner || lead.originTelecaller || null;
+    const latestRemark = Array.isArray(lead.remarks) && lead.remarks.length > 0 ? lead.remarks[lead.remarks.length - 1] : null;
+
     res.status(200).json({
       status: 'success',
       exists: true,
@@ -182,11 +194,40 @@ export const checkPhoneExists = async (req, res, next) => {
         name: lead.name,
         phone: lead.phone,
         status: lead.status,
+        city: lead.city || '',
+        state: lead.state || '',
+        createdAt: lead.createdAt,
+        assignedAt: lead.assignedAt,
+        followUpDate: lead.followUpDate,
         assignedTo: lead.assignedTo ? {
           _id: lead.assignedTo._id,
           name: lead.assignedTo.name,
           role: lead.assignedTo.role,
+          email: lead.assignedTo.email,
         } : null,
+        originTelecaller: lead.originTelecaller ? {
+          _id: lead.originTelecaller._id,
+          name: lead.originTelecaller.name,
+          role: lead.originTelecaller.role,
+        } : null,
+        branchOwner: lead.branchOwner ? {
+          _id: lead.branchOwner._id,
+          name: lead.branchOwner.name,
+          role: lead.branchOwner.role,
+        } : null,
+        assignedBranch: lead.assignedBranch ? {
+          _id: lead.assignedBranch._id,
+          name: lead.assignedBranch.name,
+          city: lead.assignedBranch.city,
+        } : null,
+        assignedBy: lead.assignedBy ? {
+          _id: lead.assignedBy._id,
+          name: lead.assignedBy.name,
+          role: lead.assignedBy.role,
+        } : null,
+        assignedEmployeeName: assignedEmployee ? assignedEmployee.name : 'Unassigned',
+        assignedEmployeeRole: assignedEmployee ? assignedEmployee.role : 'N/A',
+        latestRemarkNote: latestRemark ? latestRemark.note : '',
       },
     });
   } catch (error) {
@@ -633,8 +674,7 @@ export const assignLead = async (req, res, next) => {
     }
 
     const canAssign =
-      ['superAdmin', 'admin', 'sales'].includes(req.user.role) ||
-      (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
+      ['superAdmin', 'admin', 'sales', 'crmuser'].includes(req.user.role) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canAssign) {
       res.status(403);
@@ -657,6 +697,10 @@ export const assignLead = async (req, res, next) => {
     lead.assignedToModel = assigneeModel;
     lead.assignedBy = req.user._id;
     lead.assignedByModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
+    lead.assignedAt = new Date();
+    if (['calling', 'telecaller'].includes(targetUser.role) && !lead.originTelecaller) {
+      lead.originTelecaller = userId;
+    }
     lead.status = 'assigned';
     lead.isCallDone = false;
     lead.isReassigned = wasReassigned;
@@ -740,9 +784,9 @@ export const addRemark = async (req, res, next) => {
     }
 
     const canRemark =
-      ['superAdmin', 'admin', 'sales'].includes(req.user.role) ||
-      (req.user.role === 'crmuser' && (lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString()) === req.user._id.toString()) ||
-      lead.assignedTo?.toString() === req.user._id.toString();
+      ['superAdmin', 'admin', 'sales', 'crmuser', 'calling', 'telecaller'].includes(req.user.role) ||
+      lead.assignedTo?.toString() === req.user._id.toString() ||
+      lead.originTelecaller?.toString() === req.user._id.toString();
     if (!canRemark) {
       res.status(403);
       throw new Error('You do not have permission to add remarks to this lead');
@@ -754,6 +798,9 @@ export const addRemark = async (req, res, next) => {
       addedBy: req.user._id,
       followUpDate: followUpDate ? new Date(followUpDate) : undefined,
     });
+
+    // Mark call as done if added by telecaller/calling/sales
+    lead.isCallDone = true;
 
     // Update secondary details if provided in request
     if (followUpDate !== undefined) {
@@ -2065,7 +2112,7 @@ export const logTelecallerCall = async (req, res, next) => {
     if (callStatus) {
       lead.status = callStatus;
     }
-    lead.isCallDone = false;
+    lead.isCallDone = true;
 
     if (followUpDate) {
       lead.followUpDate = new Date(followUpDate);
@@ -2086,6 +2133,243 @@ export const logTelecallerCall = async (req, res, next) => {
       status: 'success',
       message: 'Call log saved successfully',
       data: { lead },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Bulk paste and distribute leads to telecallers (e.g. Jyoti, Alpana)
+// @route   POST /api/v1/leads/bulk-distribute
+// @access  Private (superAdmin, admin, crmuser)
+export const bulkDistributeLeads = async (req, res, next) => {
+  try {
+    if (!['superAdmin', 'admin', 'crmuser'].includes(req.user.role)) {
+      res.status(403);
+      throw new Error('Only Admin and CRM Users are authorized to bulk distribute leads');
+    }
+
+    const { rawData, targetUserIds, distributionMode = 'split', skipDuplicates = true, source = 'Bulk CRM User' } = req.body;
+
+    if (!rawData || typeof rawData !== 'string' || !rawData.trim()) {
+      res.status(400);
+      throw new Error('Please paste numbers to distribute');
+    }
+
+    if (!Array.isArray(targetUserIds) || targetUserIds.length === 0) {
+      res.status(400);
+      throw new Error('Please select at least one telecaller to assign leads to');
+    }
+
+    // Verify target users exist
+    const targetUsers = await User.find({ _id: { $in: targetUserIds } }).select('_id name email role active').lean();
+    if (targetUsers.length === 0) {
+      res.status(404);
+      throw new Error('Selected target telecallers not found');
+    }
+
+    // Parse rawData lines / commas / tabs
+    const lines = rawData.split(/[\r\n]+/);
+    const parsedEntries = [];
+    const seenPhones = new Set();
+    const invalidNumbers = [];
+
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      const parts = trimmed.split(/[,;\t|]+/).map(p => p.trim());
+      let phone = '';
+      let name = '';
+      let city = '';
+
+      for (const part of parts) {
+        const digits = part.replace(/\D/g, '');
+        if (digits.length >= 10 && digits.length <= 15) {
+          phone = digits;
+        } else if (!name && isNaN(part)) {
+          name = part;
+        } else if (!city && isNaN(part)) {
+          city = part;
+        }
+      }
+
+      if (!phone) {
+        invalidNumbers.push(trimmed);
+        return;
+      }
+
+      // Normalized 10 digits for deduplication
+      const normalizedPhone = phone.slice(-10);
+      if (seenPhones.has(normalizedPhone)) {
+        return; // skip duplicate in the same paste
+      }
+      seenPhones.add(normalizedPhone);
+
+      parsedEntries.push({
+        phone,
+        name: name || `Lead ${phone.slice(-4)}`,
+        city: city || '',
+      });
+    });
+
+    if (parsedEntries.length === 0) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'No valid 10-digit phone numbers found in input.',
+        invalidNumbers,
+      });
+    }
+
+    // Check existing numbers in database
+    const phonesList = parsedEntries.map(e => e.phone);
+    const last10RegexList = parsedEntries.map(e => e.phone.slice(-10) + '$');
+
+    const existingLeads = await Lead.find({
+      $or: [
+        { phone: { $in: phonesList } },
+        { phone: { $regex: new RegExp(`(${last10RegexList.join('|')})`) } }
+      ]
+    })
+    .populate('assignedTo', 'name email role')
+    .populate('originTelecaller', 'name email role')
+    .populate('branchOwner', 'name email role')
+    .populate('assignedBranch', 'name city')
+    .lean();
+
+    const existingPhoneMap = new Map();
+    existingLeads.forEach(l => {
+      const clean = l.phone.replace(/\D/g, '').slice(-10);
+      existingPhoneMap.set(clean, l);
+    });
+
+    const leadsToCreate = [];
+    const leadsToReassign = [];
+    const skippedDuplicates = [];
+
+    parsedEntries.forEach((entry) => {
+      const norm = entry.phone.slice(-10);
+      const existing = existingPhoneMap.get(norm);
+      if (existing) {
+        const assignee = existing.assignedTo || existing.branchOwner || existing.originTelecaller || null;
+        if (skipDuplicates) {
+          skippedDuplicates.push({
+            phone: entry.phone,
+            name: existing.name || entry.name,
+            assignedTo: assignee ? {
+              name: assignee.name,
+              role: assignee.role,
+            } : { name: 'Unassigned', role: 'N/A' },
+            status: existing.status,
+            assignedBranch: existing.assignedBranch?.name || null,
+          });
+        } else {
+          leadsToReassign.push({
+            leadId: existing._id,
+            entry,
+          });
+        }
+      } else {
+        leadsToCreate.push(entry);
+      }
+    });
+
+    const now = new Date();
+    const creatorModel = ['superAdmin', 'admin'].includes(req.user.role) ? 'Admin' : 'User';
+    const assignedByModel = creatorModel;
+
+    // Distribution tracking
+    const distributionCounts = {};
+    targetUsers.forEach(u => {
+      distributionCounts[u._id.toString()] = {
+        userId: u._id.toString(),
+        name: u.name,
+        role: u.role,
+        count: 0,
+      };
+    });
+
+    let targetIndex = 0;
+    const createdDocs = [];
+
+    for (const item of leadsToCreate) {
+      const assignedUser = targetUsers[targetIndex % targetUsers.length];
+      targetIndex++;
+
+      const isTelecaller = ['calling', 'telecaller'].includes(assignedUser.role);
+
+      createdDocs.push({
+        name: item.name,
+        phone: item.phone,
+        city: item.city,
+        source: source || 'Bulk CRM User',
+        status: 'assigned',
+        priority: 'medium',
+        isCallDone: false,
+        createdBy: req.user._id,
+        createdByModel: creatorModel,
+        assignedTo: assignedUser._id,
+        assignedToModel: 'User',
+        originTelecaller: isTelecaller ? assignedUser._id : null,
+        assignedBy: req.user._id,
+        assignedByModel,
+        assignedAt: now,
+        remarks: [
+          {
+            note: `[Bulk Lead Distribution] Assigned to ${assignedUser.name} (${assignedUser.role}) by ${req.user.name}`,
+            addedBy: req.user._id,
+            createdAt: now,
+          }
+        ]
+      });
+
+      distributionCounts[assignedUser._id.toString()].count++;
+    }
+
+    if (createdDocs.length > 0) {
+      await Lead.insertMany(createdDocs);
+    }
+
+    // Reassign existing leads if skipDuplicates is false
+    for (const item of leadsToReassign) {
+      const assignedUser = targetUsers[targetIndex % targetUsers.length];
+      targetIndex++;
+
+      await Lead.findByIdAndUpdate(item.leadId, {
+        assignedTo: assignedUser._id,
+        assignedToModel: 'User',
+        assignedBy: req.user._id,
+        assignedByModel,
+        assignedAt: now,
+        isCallDone: false,
+        status: 'assigned',
+        isReassigned: true,
+        reassignedAt: now,
+        $push: {
+          remarks: {
+            note: `[Bulk Reassignment] Reassigned to ${assignedUser.name} by ${req.user.name}`,
+            addedBy: req.user._id,
+            createdAt: now,
+          }
+        }
+      });
+
+      distributionCounts[assignedUser._id.toString()].count++;
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        totalParsed: parsedEntries.length,
+        totalCreated: createdDocs.length,
+        totalReassigned: leadsToReassign.length,
+        totalAssigned: createdDocs.length + leadsToReassign.length,
+        totalSkipped: skippedDuplicates.length,
+        invalidCount: invalidNumbers.length,
+        distribution: Object.values(distributionCounts),
+        skippedDuplicates,
+        invalidNumbers,
+      }
     });
   } catch (error) {
     next(error);

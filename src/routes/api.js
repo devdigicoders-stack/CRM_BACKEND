@@ -42,7 +42,8 @@ apiRouter.post('/leads/:id/log-call', protect, leadController.logTelecallerCall)
 // --- Lead Routes ---
 apiRouter.get('/leads/staff-data-summary', protect, restrictTo('superAdmin', 'admin'), leadController.getStaffDataSummary);
 apiRouter.post('/leads/bulk-delete', protect, restrictTo('superAdmin'), leadController.bulkDeleteLeads);
-apiRouter.post('/leads/bulk-reassign', protect, restrictTo('superAdmin', 'admin'), leadController.bulkReassignLeads);
+apiRouter.post('/leads/bulk-reassign', protect, restrictTo('superAdmin', 'admin', 'crmuser'), leadController.bulkReassignLeads);
+apiRouter.post('/leads/bulk-distribute', protect, restrictTo('superAdmin', 'admin', 'crmuser'), leadController.bulkDistributeLeads);
 apiRouter.post('/leads/bulk-upload', protect, restrictTo('superAdmin', 'admin'), leadController.uploadBulkMiddleware, leadController.bulkUploadLeads);
 apiRouter.post('/leads', protect, checkPermission('leads'), leadController.createLead);
 apiRouter.get('/leads', protect, checkPermission('leads'), leadController.getLeads);
@@ -60,6 +61,7 @@ apiRouter.put('/leads/:id/delivery', protect, checkPermission('leads'), leadCont
 
 // --- Dashboard Routes ---
 apiRouter.get('/dashboard/stats', protect, checkPermission('dashboard'), dashboardController.getDashboardStats);
+apiRouter.get('/dashboard/telecaller-performance', protect, dashboardController.getTelecallerMyStats);
 apiRouter.get('/dashboard/sales-revenue', protect, restrictTo('superAdmin', 'admin', 'accountant', 'branchManager'), dashboardController.getSalesRevenueAnalytics);
 apiRouter.get('/dashboard/reminders/today', protect, checkPermission('dashboard'), dashboardController.getTodayReminders);
 apiRouter.get('/dashboard/reminders/missed', protect, checkPermission('dashboard'), dashboardController.getMissedFollowUps);

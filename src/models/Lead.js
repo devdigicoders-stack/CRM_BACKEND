@@ -195,6 +195,10 @@ const leadSchema = new mongoose.Schema(
       type: String,
       enum: ['User', 'Admin'],
     },
+    assignedAt: {
+      type: Date,
+      default: null,
+    },
     followUpDate: {
       type: Date,
     },
@@ -443,5 +447,7 @@ leadSchema.index({ assignedTo: 1, isReassigned: 1, reassignedAt: -1 });
 leadSchema.index({ followUpDate: 1 });
 leadSchema.index({ createdAt: -1 });
 leadSchema.index({ isCallDone: 1, assignedTo: 1 });
+leadSchema.index({ assignedTo: 1, assignedAt: -1 });
+leadSchema.index({ assignedBy: 1, assignedAt: -1 });
 
 export const Lead = mongoose.model('Lead', leadSchema);

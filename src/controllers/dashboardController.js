@@ -523,13 +523,17 @@ export const getPerformanceAnalytics = async (req, res, next) => {
 
 // @desc    Get lead assignment report (date-wise and assignee-wise)
 // @route   GET /api/v1/dashboard/report
-// @access  Private (Super Admin, Admin, and Manager only)
+// @access  Private (Super Admin, Admin, Manager, CRM User)
 export const getLeadAssignmentReport = async (req, res, next) => {
   try {
     const query = {};
 
     if (req.user.role === 'crmuser') {
-      query.$or = [{ createdBy: req.user._id }, { assignedTo: req.user._id }];
+      query.$or = [
+        { createdBy: req.user._id },
+        { assignedTo: req.user._id },
+        { assignedBy: req.user._id }
+      ];
     } else if (req.user.role === 'branchManager') {
       const { getBranchUserIds } = await import('../utils/branchHelper.js');
       const branchUserIds = await getBranchUserIds(req.user._id);
@@ -544,11 +548,35 @@ export const getLeadAssignmentReport = async (req, res, next) => {
     if (req.query.startDate && req.query.endDate) {
       const endOfDay = new Date(req.query.endDate);
       endOfDay.setHours(23, 59, 59, 999);
-      query.createdAt = {
-        $gte: new Date(req.query.startDate),
-        $lte: endOfDay
+      const startOfDay = new Date(req.query.startDate);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const dateCondition = {
+        $or: [
+          { createdAt: { $gte: startOfDay, $lte: endOfDay } },
+          { assignedAt: { $gte: startOfDay, $lte: endOfDay } }
+        ]
       };
+
+      if (query.$or) {
+        query.$and = [
+          { $or: query.$or },
+          dateCondition
+        ];
+        delete query.$or;
+      } else {
+        query.$or = dateCondition.$or;
+      }
     }
+
+    // Overall summary metrics across the matching query
+    const [totalMatching, totalAssigned, totalUnassigned, pendingCalls, callsDone] = await Promise.all([
+      Lead.countDocuments(query),
+      Lead.countDocuments({ ...query, assignedTo: { $ne: null } }),
+      Lead.countDocuments({ ...query, assignedTo: null }),
+      Lead.countDocuments({ ...query, isCallDone: false, assignedTo: { $ne: null } }),
+      Lead.countDocuments({ ...query, isCallDone: true, assignedTo: { $ne: null } }),
+    ]);
 
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
@@ -561,7 +589,9 @@ export const getLeadAssignmentReport = async (req, res, next) => {
           _id: {
             assignee: "$assignedTo"
           },
-          count: { $sum: 1 }
+          count: { $sum: 1 },
+          callsDone: { $sum: { $cond: [{ $eq: ["$isCallDone", true] }, 1, 0] } },
+          pendingCalls: { $sum: { $cond: [{ $eq: ["$isCallDone", false] }, 1, 0] } }
         }
       },
       {
@@ -581,6 +611,7 @@ export const getLeadAssignmentReport = async (req, res, next) => {
       {
         $project: {
           _id: 0,
+          assigneeId: '$_id.assignee',
           assignee: {
             $cond: {
               if: { $ifNull: ['$assigneeDoc', false] },
@@ -595,7 +626,9 @@ export const getLeadAssignmentReport = async (req, res, next) => {
               else: 'N/A'
             }
           },
-          leadsAssigned: '$count'
+          leadsAssigned: '$count',
+          callsDone: 1,
+          pendingCalls: 1
         }
       },
       {
@@ -623,6 +656,13 @@ export const getLeadAssignmentReport = async (req, res, next) => {
         total,
         totalPages
       },
+      summary: {
+        totalLeads: totalMatching,
+        assignedCount: totalAssigned,
+        unassignedCount: totalUnassigned,
+        pendingCallsCount: pendingCalls,
+        callsDoneCount: callsDone,
+      },
       data: {
         report: reportData
       }
@@ -631,3 +671,214 @@ export const getLeadAssignmentReport = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get telecaller performance statistics for telecaller's own dashboard
+// @route   GET /api/v1/dashboard/telecaller-performance
+// @access  Private (calling, telecaller, superAdmin, admin)
+export const getTelecallerMyStats = async (req, res, next) => {
+  try {
+    const { timeframe = 'today', startDate, endDate, telecallerId } = req.query;
+
+    let targetUserId = req.user._id;
+    if (['superAdmin', 'admin'].includes(req.user.role) && telecallerId) {
+      targetUserId = telecallerId;
+    }
+
+    const now = new Date();
+    let dateFilter = null;
+
+    if (startDate || endDate) {
+      dateFilter = {};
+      if (startDate) {
+        const s = new Date(startDate);
+        s.setHours(0, 0, 0, 0);
+        dateFilter.$gte = s;
+      }
+      if (endDate) {
+        const e = new Date(endDate);
+        e.setHours(23, 59, 59, 999);
+        dateFilter.$lte = e;
+      }
+    } else if (timeframe === 'today') {
+      const s = new Date(now);
+      s.setHours(0, 0, 0, 0);
+      const e = new Date(now);
+      e.setHours(23, 59, 59, 999);
+      dateFilter = { $gte: s, $lte: e };
+    } else if (timeframe === 'yesterday') {
+      const s = new Date(now);
+      s.setDate(s.getDate() - 1);
+      s.setHours(0, 0, 0, 0);
+      const e = new Date(now);
+      e.setDate(e.getDate() - 1);
+      e.setHours(23, 59, 59, 999);
+      dateFilter = { $gte: s, $lte: e };
+    } else if (timeframe === 'thisWeek') {
+      const s = new Date(now);
+      s.setDate(now.getDate() - now.getDay());
+      s.setHours(0, 0, 0, 0);
+      dateFilter = { $gte: s };
+    } else if (timeframe === 'thisMonth') {
+      const s = new Date(now.getFullYear(), now.getMonth(), 1);
+      s.setHours(0, 0, 0, 0);
+      dateFilter = { $gte: s };
+    }
+
+    // 1. Total Leads Received (assigned to or originated by this telecaller in date range, or active)
+    let assignedQuery = {
+      $or: [
+        { assignedTo: targetUserId },
+        { originTelecaller: targetUserId }
+      ]
+    };
+
+    if (dateFilter) {
+      assignedQuery = {
+        $or: [
+          { assignedTo: targetUserId, assignedAt: dateFilter },
+          { assignedTo: targetUserId, createdAt: dateFilter },
+          { originTelecaller: targetUserId, createdAt: dateFilter }
+        ]
+      };
+    }
+
+    const totalLeadsReceived = await Lead.countDocuments(assignedQuery);
+
+    // 2. Total Calls Completed (remarks added by this user in date range)
+    const callMatch = {
+      'remarks.addedBy': targetUserId,
+    };
+    if (dateFilter) {
+      callMatch['remarks.createdAt'] = dateFilter;
+    }
+
+    const callsCountAgg = await Lead.aggregate([
+      { $match: { 'remarks.addedBy': targetUserId } },
+      { $unwind: '$remarks' },
+      {
+        $match: {
+          'remarks.addedBy': targetUserId,
+          ...(dateFilter ? { 'remarks.createdAt': dateFilter } : {})
+        }
+      },
+      { $count: 'total' }
+    ]);
+    const totalCallsCompleted = callsCountAgg[0]?.total || 0;
+
+    // 3. Total Pending Calls (leads currently assigned to telecaller with isCallDone == false)
+    const pendingCallsCount = await Lead.countDocuments({
+      assignedTo: targetUserId,
+      isCallDone: false,
+      status: { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] }
+    });
+
+    // 4. Total Callbacks / Reminders (followUpDate scheduled in dateFilter or today)
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(now);
+    endOfToday.setHours(23, 59, 59, 999);
+
+    const followUpDateRange = dateFilter || { $gte: startOfToday, $lte: endOfToday };
+
+    const totalCallbacks = await Lead.countDocuments({
+      $or: [
+        { assignedTo: targetUserId },
+        { originTelecaller: targetUserId }
+      ],
+      followUpDate: followUpDateRange,
+      status: { $nin: ['converted', 'closed'] }
+    });
+
+    // 5. Total Leads Handed Over to Sales
+    const handoverQuery = {
+      $or: [
+        { originTelecaller: targetUserId },
+        { assignedTo: targetUserId }
+      ],
+      $and: [
+        {
+          $or: [
+            { status: 'assigned_to_branch' },
+            { assignedBranch: { $ne: null } },
+            { branchOwner: { $ne: null } }
+          ]
+        }
+      ]
+    };
+    if (dateFilter) {
+      handoverQuery.$and.push({
+        $or: [
+          { updatedAt: dateFilter },
+          { 'remarks.createdAt': dateFilter }
+        ]
+      });
+    }
+    const totalHandedOver = await Lead.countDocuments(handoverQuery);
+
+    // 6. Remaining Leads for Follow-up (active non-closed leads with a future follow-up or pending)
+    const remainingFollowups = await Lead.countDocuments({
+      assignedTo: targetUserId,
+      status: { $nin: ['converted', 'closed', 'disqualified', 'not_interested'] }
+    });
+
+    // 7. Dynamic 7-day activity trend
+    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dailyActivity = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dayName = daysOfWeek[d.getDay()];
+      const dayStart = new Date(d);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(d);
+      dayEnd.setHours(23, 59, 59, 999);
+      const dayDateFilter = { $gte: dayStart, $lte: dayEnd };
+
+      const dayCallsAgg = await Lead.aggregate([
+        { $match: { 'remarks.addedBy': targetUserId } },
+        { $unwind: '$remarks' },
+        {
+          $match: {
+            'remarks.addedBy': targetUserId,
+            'remarks.createdAt': dayDateFilter
+          }
+        },
+        { $count: 'count' }
+      ]);
+
+      const dayCalls = dayCallsAgg[0]?.count || 0;
+
+      const dayHandovers = await Lead.countDocuments({
+        $or: [{ originTelecaller: targetUserId }, { assignedTo: targetUserId }],
+        $and: [
+          { $or: [{ status: 'assigned_to_branch' }, { assignedBranch: { $ne: null } }] },
+          { updatedAt: dayDateFilter }
+        ]
+      });
+
+      dailyActivity.push({
+        day: dayName,
+        date: dayStart.toISOString().split('T')[0],
+        calls: dayCalls,
+        handedOver: dayHandovers,
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        totalLeadsReceived,
+        totalCallsCompleted,
+        totalPendingCalls: pendingCallsCount,
+        totalCallbacks,
+        totalHandedOverToSales: totalHandedOver,
+        remainingFollowups,
+        conversionRate: totalLeadsReceived > 0 ? ((totalHandedOver / totalLeadsReceived) * 100).toFixed(1) + '%' : '0.0%',
+        dailyActivity,
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

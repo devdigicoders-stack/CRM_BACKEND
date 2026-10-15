@@ -548,8 +548,8 @@ export const getTelecallerAnalytics = async (req, res, next) => {
   try {
     const { telecallerId, timeframe, startDate, endDate, branchId, city, state, pinCode, location } = req.query;
 
-    // 1. Fetch relevant telecallers
-    let telecallerQuery = { role: { $in: ['telecaller', 'calling', 'crmuser'] } };
+    // 1. Fetch relevant telecallers (calling and telecaller roles)
+    let telecallerQuery = { role: { $in: ['telecaller', 'calling'] } };
     if (req.user.role === 'branchManager') {
       const { getBranchUserIds } = await import('../utils/branchHelper.js');
       const branchUserIds = await getBranchUserIds(req.user._id);
@@ -562,6 +562,10 @@ export const getTelecallerAnalytics = async (req, res, next) => {
 
     const telecallerMap = new Map();
     allTelecallers.forEach(t => telecallerMap.set(t._id.toString(), t));
+
+    // Fetch CRM users (e.g. Preeti) to identify leads received from CRM User
+    const crmUsers = await User.find({ role: 'crmuser' }).select('_id name email role').lean();
+    const crmUserIds = new Set(crmUsers.map(u => u._id.toString()));
 
     // Determine target telecaller IDs
     let targetTelecallerIds = [];
@@ -634,7 +638,21 @@ export const getTelecallerAnalytics = async (req, res, next) => {
     }
 
     if (dateFilter) {
-      query.createdAt = dateFilter;
+      const dateOrConditions = [
+        { createdAt: dateFilter },
+        { assignedAt: dateFilter },
+        { reassignedAt: dateFilter },
+        { 'remarks.createdAt': dateFilter }
+      ];
+      if (query.$or) {
+        query.$and = [
+          { $or: query.$or },
+          { $or: dateOrConditions }
+        ];
+        delete query.$or;
+      } else {
+        query.$or = dateOrConditions;
+      }
     }
 
     if (branchId && mongoose.Types.ObjectId.isValid(branchId)) {
@@ -671,7 +689,8 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       .populate('originTelecaller', 'name email phone')
       .populate('assignedTo', 'name email phone role')
       .populate('assignedBranch', 'name city state')
-      .select('name phone email address city state pinCode status priority source originTelecaller assignedBranch assignedTo followUpDate dealValue amountPaid telecallerIncentive remarks createdAt updatedAt isCallDone transferredToInstallation')
+      .populate('assignedBy', 'name email phone role')
+      .select('name phone email address city state pinCode status priority source originTelecaller assignedBranch assignedTo assignedBy assignedAt followUpDate dealValue amountPaid telecallerIncentive remarks createdAt updatedAt isCallDone transferredToInstallation')
       .lean();
 
     // 4. Calculate Aggregate Metrics
@@ -689,6 +708,8 @@ export const getTelecallerAnalytics = async (req, res, next) => {
     let todayFollowups = 0;
     let overdueFollowups = 0;
     let upcomingFollowups = 0;
+    let leadsFromCrmUser = 0;
+    let totalPendingCalls = 0;
 
     const statusBreakdown = {
       new: 0,
@@ -728,6 +749,17 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         statusBreakdown[st]++;
       } else {
         statusBreakdown.other++;
+      }
+
+      // Check if lead was received from CRM User (Preeti)
+      const assignedById = lead.assignedBy?._id ? lead.assignedBy._id.toString() : lead.assignedBy?.toString();
+      if (assignedById && crmUserIds.has(assignedById)) {
+        leadsFromCrmUser++;
+      }
+
+      // Check if call is pending
+      if (lead.isCallDone === false && !['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'].includes(st)) {
+        totalPendingCalls++;
       }
 
       // Count remarks / calls
@@ -842,6 +874,8 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         role: t.role,
         active: t.active,
         totalLeads: 0,
+        fromCrmUser: 0,
+        pendingCalls: 0,
         totalCalls: 0,
         qualified: 0,
         converted: 0,
@@ -857,7 +891,7 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       let primaryTelecallerId = null;
       if (lead.originTelecaller?._id) {
         primaryTelecallerId = lead.originTelecaller._id.toString();
-      } else if (lead.assignedTo?._id && ['telecaller', 'calling', 'crmuser'].includes(lead.assignedTo.role)) {
+      } else if (lead.assignedTo?._id && ['telecaller', 'calling'].includes(lead.assignedTo.role)) {
         primaryTelecallerId = lead.assignedTo._id.toString();
       } else if (Array.isArray(lead.remarks) && lead.remarks.length > 0) {
         for (const r of lead.remarks) {
@@ -869,9 +903,19 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         }
       }
 
+      const assignedById = lead.assignedBy?._id ? lead.assignedBy._id.toString() : lead.assignedBy?.toString();
+
       if (primaryTelecallerId && leaderboardMap.has(primaryTelecallerId)) {
         const stats = leaderboardMap.get(primaryTelecallerId);
         stats.totalLeads++;
+
+        if (assignedById && crmUserIds.has(assignedById)) {
+          stats.fromCrmUser++;
+        }
+
+        if (lead.isCallDone === false && !['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'].includes(lead.status)) {
+          stats.pendingCalls++;
+        }
 
         const isLeadQualified = lead.status === 'assigned_to_branch' || lead.assignedBranch;
         if (isLeadQualified) stats.qualified++;
@@ -922,6 +966,8 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         summary: {
           totalLeads,
           totalCalls,
+          pendingCalls: totalPendingCalls,
+          leadsFromCrmUser,
           qualifiedCount,
           convertedCount,
           conversionRate: `${conversionRate}%`,
@@ -983,6 +1029,16 @@ export const getTelecallerDrilldown = async (req, res, next) => {
     switch (metricType) {
       case 'callsLogged':
         query['remarks.0'] = { $exists: true };
+        break;
+      case 'fromCrmUser': {
+        const crmUsersList = await User.find({ role: 'crmuser' }).select('_id').lean();
+        const cIds = crmUsersList.map(u => u._id);
+        query.assignedBy = { $in: cIds };
+        break;
+      }
+      case 'pendingCalls':
+        query.isCallDone = false;
+        query.status = { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] };
         break;
       case 'qualified':
       case 'handedOver':
