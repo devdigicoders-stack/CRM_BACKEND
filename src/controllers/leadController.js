@@ -499,6 +499,7 @@ export const getLeads = async (req, res, next) => {
       currentPage: pageNum,
       data: {
         leads: formattedLeads,
+        total,
       },
     });
   } catch (error) {

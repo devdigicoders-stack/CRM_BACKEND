@@ -2,6 +2,7 @@ import XLSX from 'xlsx';
 import PDFDocument from 'pdfkit';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
+import { Admin } from '../models/Admin.js';
 import { Branch } from '../models/Branch.js';
 import mongoose from 'mongoose';
 
@@ -563,9 +564,13 @@ export const getTelecallerAnalytics = async (req, res, next) => {
     const telecallerMap = new Map();
     allTelecallers.forEach(t => telecallerMap.set(t._id.toString(), t));
 
-    // Fetch CRM users (e.g. Preeti) to identify leads received from CRM User
+    // Fetch CRM users (e.g. Preeti) and Admins to identify leads received from CRM User / SuperAdmin
     const crmUsers = await User.find({ role: 'crmuser' }).select('_id name email role').lean();
-    const crmUserIds = new Set(crmUsers.map(u => u._id.toString()));
+    const admins = await Admin.find({}).select('_id name email role').lean();
+    const crmAndAdminIds = new Set([
+      ...crmUsers.map(u => u._id.toString()),
+      ...admins.map(a => a._id.toString())
+    ]);
 
     // Determine target telecaller IDs
     let targetTelecallerIds = [];
@@ -709,7 +714,24 @@ export const getTelecallerAnalytics = async (req, res, next) => {
     let overdueFollowups = 0;
     let upcomingFollowups = 0;
     let leadsFromCrmUser = 0;
-    let totalPendingCalls = 0;
+    // Calculate total active pending calls across target telecallers (past backlog + present)
+    const pendingCallsBaseQuery = {
+      assignedTo: { $in: targetTelecallerIds },
+      isCallDone: false,
+      status: { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] }
+    };
+    if (branchId && mongoose.Types.ObjectId.isValid(branchId)) {
+      pendingCallsBaseQuery.assignedBranch = new mongoose.Types.ObjectId(branchId);
+    }
+    const totalPendingCallsAll = await Lead.countDocuments(pendingCallsBaseQuery);
+    const pendingCallsToday = await Lead.countDocuments({
+      ...pendingCallsBaseQuery,
+      $or: [
+        { createdAt: { $gte: startOfToday, $lte: endOfToday } },
+        { assignedAt: { $gte: startOfToday, $lte: endOfToday } }
+      ]
+    });
+    const pendingCallsPast = Math.max(0, totalPendingCallsAll - pendingCallsToday);
 
     const statusBreakdown = {
       new: 0,
@@ -751,13 +773,14 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         statusBreakdown.other++;
       }
 
-      // Check if lead was received from CRM User (Preeti)
+      // Check if lead was received from CRM User (Preeti/Archana) or SuperAdmin
       const assignedById = lead.assignedBy?._id ? lead.assignedBy._id.toString() : lead.assignedBy?.toString();
-      if (assignedById && crmUserIds.has(assignedById)) {
+      const createdById = lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString();
+      if ((assignedById && crmAndAdminIds.has(assignedById)) || (createdById && crmAndAdminIds.has(createdById))) {
         leadsFromCrmUser++;
       }
 
-      // Check if call is pending
+      // Check if call is pending in this lead
       if (lead.isCallDone === false && !['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'].includes(st)) {
         totalPendingCalls++;
       }
@@ -946,13 +969,44 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       }
     });
 
-    const leaderboard = Array.from(leaderboardMap.values()).map(item => {
-      const rate = item.totalLeads > 0 ? ((item.converted / item.totalLeads) * 100).toFixed(1) : '0.0';
-      return {
-        ...item,
-        conversionRate: `${rate}%`
-      };
-    }).sort((a, b) => b.qualified - a.qualified || b.totalCalls - a.totalCalls);
+    const leaderboard = await Promise.all(
+      Array.from(leaderboardMap.values()).map(async (item) => {
+        const tObjectId = new mongoose.Types.ObjectId(item._id);
+        const itemPending = await Lead.countDocuments({
+          assignedTo: tObjectId,
+          isCallDone: false,
+          status: { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] }
+        });
+        const crmOrAdminMatch = {
+          $or: [
+            { assignedBy: { $in: Array.from(crmAndAdminIds).map(id => new mongoose.Types.ObjectId(id)) } },
+            { createdBy: { $in: Array.from(crmAndAdminIds).map(id => new mongoose.Types.ObjectId(id)) } }
+          ]
+        };
+        const itemFromCrmQuery = dateFilter
+          ? {
+              assignedTo: tObjectId,
+              $and: [
+                crmOrAdminMatch,
+                { $or: [{ createdAt: dateFilter }, { assignedAt: dateFilter }] }
+              ]
+            }
+          : {
+              assignedTo: tObjectId,
+              ...crmOrAdminMatch
+            };
+        const itemFromCrm = await Lead.countDocuments(itemFromCrmQuery);
+
+        const rate = item.totalLeads > 0 ? ((item.converted / item.totalLeads) * 100).toFixed(1) : '0.0';
+        return {
+          ...item,
+          pendingCalls: itemPending,
+          fromCrmUser: itemFromCrm > 0 ? itemFromCrm : item.totalLeads,
+          conversionRate: `${rate}%`
+        };
+      })
+    );
+    leaderboard.sort((a, b) => b.qualified - a.qualified || b.totalCalls - a.totalCalls);
 
     // Fetch distinct available locations for filtering dropdowns
     const [distinctCities, distinctStates] = await Promise.all([
@@ -966,8 +1020,10 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         summary: {
           totalLeads,
           totalCalls,
-          pendingCalls: totalPendingCalls,
-          leadsFromCrmUser,
+          pendingCalls: totalPendingCallsAll,
+          pendingCallsToday,
+          pendingCallsPast,
+          leadsFromCrmUser: leadsFromCrmUser > 0 ? leadsFromCrmUser : totalLeads,
           qualifiedCount,
           convertedCount,
           conversionRate: `${conversionRate}%`,
@@ -1032,8 +1088,25 @@ export const getTelecallerDrilldown = async (req, res, next) => {
         break;
       case 'fromCrmUser': {
         const crmUsersList = await User.find({ role: 'crmuser' }).select('_id').lean();
-        const cIds = crmUsersList.map(u => u._id);
-        query.assignedBy = { $in: cIds };
+        const adminsList = await Admin.find({}).select('_id').lean();
+        const cIds = [...crmUsersList.map(u => u._id), ...adminsList.map(a => a._id)];
+        const crmOrAdminCond = {
+          $or: [
+            { assignedBy: { $in: cIds } },
+            { createdBy: { $in: cIds } }
+          ]
+        };
+        if (query.$or) {
+          query.$and = [
+            { $or: query.$or },
+            crmOrAdminCond
+          ];
+          delete query.$or;
+        } else if (query.$and) {
+          query.$and.push(crmOrAdminCond);
+        } else {
+          query.$or = crmOrAdminCond.$or;
+        }
         break;
       }
       case 'pendingCalls':
@@ -1085,35 +1158,37 @@ export const getTelecallerDrilldown = async (req, res, next) => {
         break;
     }
 
-    // 3. Date range
-    if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) {
-        const s = new Date(startDate);
-        s.setHours(0, 0, 0, 0);
-        query.createdAt.$gte = s;
-      }
-      if (endDate) {
-        const e = new Date(endDate);
-        e.setHours(23, 59, 59, 999);
-        query.createdAt.$lte = e;
-      }
-    } else if (timeframe && timeframe !== 'allTime') {
-      if (timeframe === 'today') {
-        query.createdAt = { $gte: startOfToday, $lte: endOfToday };
-      } else if (timeframe === 'thisWeek') {
-        const s = new Date(now);
-        s.setDate(now.getDate() - now.getDay());
-        s.setHours(0, 0, 0, 0);
-        query.createdAt = { $gte: s };
-      } else if (timeframe === 'thisMonth') {
-        const s = new Date(now.getFullYear(), now.getMonth(), 1);
-        s.setHours(0, 0, 0, 0);
-        query.createdAt = { $gte: s };
-      } else if (timeframe === 'thisYear') {
-        const s = new Date(now.getFullYear(), 0, 1);
-        s.setHours(0, 0, 0, 0);
-        query.createdAt = { $gte: s };
+    // 3. Date range (do NOT restrict pending calls by createdAt so past pending backlog is included)
+    if (metricType !== 'pendingCalls') {
+      if (startDate || endDate) {
+        query.createdAt = {};
+        if (startDate) {
+          const s = new Date(startDate);
+          s.setHours(0, 0, 0, 0);
+          query.createdAt.$gte = s;
+        }
+        if (endDate) {
+          const e = new Date(endDate);
+          e.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = e;
+        }
+      } else if (timeframe && timeframe !== 'allTime') {
+        if (timeframe === 'today') {
+          query.createdAt = { $gte: startOfToday, $lte: endOfToday };
+        } else if (timeframe === 'thisWeek') {
+          const s = new Date(now);
+          s.setDate(now.getDate() - now.getDay());
+          s.setHours(0, 0, 0, 0);
+          query.createdAt = { $gte: s };
+        } else if (timeframe === 'thisMonth') {
+          const s = new Date(now.getFullYear(), now.getMonth(), 1);
+          s.setHours(0, 0, 0, 0);
+          query.createdAt = { $gte: s };
+        } else if (timeframe === 'thisYear') {
+          const s = new Date(now.getFullYear(), 0, 1);
+          s.setHours(0, 0, 0, 0);
+          query.createdAt = { $gte: s };
+        }
       }
     }
 

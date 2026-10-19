@@ -1,4 +1,6 @@
 import { Lead } from '../models/Lead.js';
+import { User } from '../models/User.js';
+import { Admin } from '../models/Admin.js';
 import { getSalesRevenueMetrics, getApprovedSalesLeads } from '../utils/salesMetricsHelper.js';
 
 // Helper to format lead response with helper integration links
@@ -24,9 +26,7 @@ export const getDashboardStats = async (req, res, next) => {
     const query = {};
 
     // If staff user, restrict metrics to their own leads
-    if (req.user.role === 'crmuser') {
-      query.$or = [{ createdBy: req.user._id }, { assignedTo: req.user._id }];
-    } else if (req.user.role === 'branchManager') {
+    if (req.user.role === 'branchManager') {
       const { getBranchUserIds } = await import('../utils/branchHelper.js');
       const branchUserIds = await getBranchUserIds(req.user._id);
       query.$or = [
@@ -40,11 +40,11 @@ export const getDashboardStats = async (req, res, next) => {
         { originTelecaller: req.user._id },
         { 'remarks.addedBy': req.user._id }
       ];
-    } else if (!['superAdmin', 'admin'].includes(req.user.role)) {
+    } else if (!['superAdmin', 'admin', 'crmuser'].includes(req.user.role)) {
       query.assignedTo = req.user._id;
     }
 
-    const isAdmin = ['superAdmin', 'admin', 'branchManager'].includes(req.user.role);
+    const isAdmin = ['superAdmin', 'admin', 'crmuser', 'branchManager'].includes(req.user.role);
 
     // Dates for today
     const now = new Date();
@@ -684,6 +684,9 @@ export const getTelecallerMyStats = async (req, res, next) => {
       targetUserId = telecallerId;
     }
 
+    const targetUser = await User.findById(targetUserId).select('name email role phone').lean();
+    const telecallerName = targetUser?.name || req.user.name || 'Telecaller';
+
     const now = new Date();
     let dateFilter = null;
 
@@ -724,34 +727,60 @@ export const getTelecallerMyStats = async (req, res, next) => {
       dateFilter = { $gte: s };
     }
 
-    // 1. Total Leads Received (assigned to or originated by this telecaller in date range, or active)
-    let assignedQuery = {
+    // Identify CRM users & Admins (to count leads assigned by CRM User / SuperAdmin)
+    const crmUsersList = await User.find({ role: 'crmuser' }).select('_id').lean();
+    const adminsList = await Admin.find({}).select('_id').lean();
+    const crmAndAdminIds = [...crmUsersList.map(u => u._id), ...adminsList.map(a => a._id)];
+
+    // 1. Total Leads Assigned / Received
+    const allTimeAssignedQuery = {
       $or: [
         { assignedTo: targetUserId },
         { originTelecaller: targetUserId }
       ]
     };
+    const allTimeLeadsReceived = await Lead.countDocuments(allTimeAssignedQuery);
 
+    let assignedQuery = allTimeAssignedQuery;
     if (dateFilter) {
       assignedQuery = {
-        $or: [
-          { assignedTo: targetUserId, assignedAt: dateFilter },
-          { assignedTo: targetUserId, createdAt: dateFilter },
-          { originTelecaller: targetUserId, createdAt: dateFilter }
+        $and: [
+          allTimeAssignedQuery,
+          {
+            $or: [
+              { assignedAt: dateFilter },
+              { createdAt: dateFilter },
+              { reassignedAt: dateFilter }
+            ]
+          }
         ]
       };
     }
-
     const totalLeadsReceived = await Lead.countDocuments(assignedQuery);
 
-    // 2. Total Calls Completed (remarks added by this user in date range)
-    const callMatch = {
-      'remarks.addedBy': targetUserId,
+    // 1b. Total leads assigned by CRM User or SuperAdmin
+    const crmAssignCondition = {
+      $or: [
+        { assignedBy: { $in: crmAndAdminIds } },
+        { createdBy: { $in: crmAndAdminIds } }
+      ]
     };
-    if (dateFilter) {
-      callMatch['remarks.createdAt'] = dateFilter;
-    }
+    const allTimeAssignedByCrmOrAdmin = await Lead.countDocuments({
+      $and: [
+        allTimeAssignedQuery,
+        crmAssignCondition
+      ]
+    });
+    const totalAssignedByCrmOrAdmin = dateFilter
+      ? await Lead.countDocuments({
+          $and: [
+            assignedQuery,
+            crmAssignCondition
+          ]
+        })
+      : allTimeAssignedByCrmOrAdmin;
 
+    // 2. Total Calls Completed (remarks added by this user in date range)
     const callsCountAgg = await Lead.aggregate([
       { $match: { 'remarks.addedBy': targetUserId } },
       { $unwind: '$remarks' },
@@ -765,21 +794,39 @@ export const getTelecallerMyStats = async (req, res, next) => {
     ]);
     const totalCallsCompleted = callsCountAgg[0]?.total || 0;
 
-    // 3. Total Pending Calls (leads currently assigned to telecaller with isCallDone == false)
-    const pendingCallsCount = await Lead.countDocuments({
+    const allTimeCallsAgg = await Lead.aggregate([
+      { $match: { 'remarks.addedBy': targetUserId } },
+      { $unwind: '$remarks' },
+      { $match: { 'remarks.addedBy': targetUserId } },
+      { $count: 'total' }
+    ]);
+    const allTimeCallsCompleted = allTimeCallsAgg[0]?.total || 0;
+
+    // 3. Pending Calls (Present & Past Backlog)
+    // All active leads currently assigned to telecaller with isCallDone == false
+    const pendingBaseFilter = {
       assignedTo: targetUserId,
       isCallDone: false,
       status: { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] }
-    });
+    };
+    const totalPendingCalls = await Lead.countDocuments(pendingBaseFilter);
 
-    // 4. Total Callbacks / Reminders (followUpDate scheduled in dateFilter or today)
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
     const endOfToday = new Date(now);
     endOfToday.setHours(23, 59, 59, 999);
 
-    const followUpDateRange = dateFilter || { $gte: startOfToday, $lte: endOfToday };
+    const pendingCallsToday = await Lead.countDocuments({
+      ...pendingBaseFilter,
+      $or: [
+        { createdAt: { $gte: startOfToday, $lte: endOfToday } },
+        { assignedAt: { $gte: startOfToday, $lte: endOfToday } }
+      ]
+    });
+    const pendingCallsPast = Math.max(0, totalPendingCalls - pendingCallsToday);
 
+    // 4. Callbacks / Reminders scheduled
+    const followUpDateRange = dateFilter || { $gte: startOfToday, $lte: endOfToday };
     const totalCallbacks = await Lead.countDocuments({
       $or: [
         { assignedTo: targetUserId },
@@ -790,7 +837,7 @@ export const getTelecallerMyStats = async (req, res, next) => {
     });
 
     // 5. Total Leads Handed Over to Sales
-    const handoverQuery = {
+    const baseHandoverCondition = {
       $or: [
         { originTelecaller: targetUserId },
         { assignedTo: targetUserId }
@@ -805,13 +852,22 @@ export const getTelecallerMyStats = async (req, res, next) => {
         }
       ]
     };
+    const allTimeHandedOver = await Lead.countDocuments(baseHandoverCondition);
+
+    let handoverQuery = baseHandoverCondition;
     if (dateFilter) {
-      handoverQuery.$and.push({
-        $or: [
-          { updatedAt: dateFilter },
-          { 'remarks.createdAt': dateFilter }
+      handoverQuery = {
+        ...baseHandoverCondition,
+        $and: [
+          ...baseHandoverCondition.$and,
+          {
+            $or: [
+              { updatedAt: dateFilter },
+              { 'remarks.createdAt': dateFilter }
+            ]
+          }
         ]
-      });
+      };
     }
     const totalHandedOver = await Lead.countDocuments(handoverQuery);
 
@@ -845,8 +901,15 @@ export const getTelecallerMyStats = async (req, res, next) => {
         },
         { $count: 'count' }
       ]);
-
       const dayCalls = dayCallsAgg[0]?.count || 0;
+
+      const dayReceived = await Lead.countDocuments({
+        $or: [
+          { assignedTo: targetUserId, assignedAt: dayDateFilter },
+          { assignedTo: targetUserId, createdAt: dayDateFilter },
+          { originTelecaller: targetUserId, createdAt: dayDateFilter }
+        ]
+      });
 
       const dayHandovers = await Lead.countDocuments({
         $or: [{ originTelecaller: targetUserId }, { assignedTo: targetUserId }],
@@ -860,21 +923,51 @@ export const getTelecallerMyStats = async (req, res, next) => {
         day: dayName,
         date: dayStart.toISOString().split('T')[0],
         calls: dayCalls,
+        received: dayReceived,
         handedOver: dayHandovers,
       });
     }
 
+    const effectiveAssigned = totalLeadsReceived > 0 ? totalLeadsReceived : allTimeLeadsReceived;
+    const effectiveHandedOver = totalHandedOver > 0 ? totalHandedOver : allTimeHandedOver;
+    const conversionRate = effectiveAssigned > 0
+      ? ((effectiveHandedOver / effectiveAssigned) * 100).toFixed(1) + '%'
+      : '0.0%';
+
+    const metricsPayload = {
+      totalLeadsReceived: timeframe === 'today' && totalLeadsReceived === 0 ? allTimeLeadsReceived : totalLeadsReceived,
+      allTimeLeadsReceived,
+      totalAssignedByCrmOrAdmin: timeframe === 'today' && totalAssignedByCrmOrAdmin === 0 ? allTimeAssignedByCrmOrAdmin : totalAssignedByCrmOrAdmin,
+      allTimeAssignedByCrmOrAdmin,
+      totalCallsCompleted: timeframe === 'today' && totalCallsCompleted === 0 ? allTimeCallsCompleted : totalCallsCompleted,
+      allTimeCallsCompleted,
+      totalPendingCalls,
+      pendingCallsToday,
+      pendingCallsPast,
+      totalCallbacks,
+      totalHandedOverToSales: timeframe === 'today' && totalHandedOver === 0 ? allTimeHandedOver : totalHandedOver,
+      allTimeHandedOver,
+      remainingFollowups,
+      conversionRate,
+      weeklyActivity: dailyActivity,
+      dailyActivity,
+    };
+
     res.status(200).json({
       status: 'success',
+      telecaller: {
+        _id: targetUser?._id || targetUserId,
+        name: telecallerName,
+        role: targetUser?.role || 'telecaller'
+      },
       data: {
-        totalLeadsReceived,
-        totalCallsCompleted,
-        totalPendingCalls: pendingCallsCount,
-        totalCallbacks,
-        totalHandedOverToSales: totalHandedOver,
-        remainingFollowups,
-        conversionRate: totalLeadsReceived > 0 ? ((totalHandedOver / totalLeadsReceived) * 100).toFixed(1) + '%' : '0.0%',
-        dailyActivity,
+        metrics: metricsPayload,
+        ...metricsPayload,
+        telecaller: {
+          _id: targetUser?._id || targetUserId,
+          name: telecallerName,
+          role: targetUser?.role || 'telecaller'
+        }
       }
     });
   } catch (error) {
