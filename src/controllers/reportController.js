@@ -695,7 +695,8 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       .populate('assignedTo', 'name email phone role')
       .populate('assignedBranch', 'name city state')
       .populate('assignedBy', 'name email phone role')
-      .select('name phone email address city state pinCode status priority source originTelecaller assignedBranch assignedTo assignedBy assignedAt followUpDate dealValue amountPaid telecallerIncentive remarks createdAt updatedAt isCallDone transferredToInstallation')
+      .populate('createdBy', 'name email phone role')
+      .select('name phone email address city state pinCode status priority source originTelecaller assignedBranch assignedTo assignedBy createdBy assignedAt followUpDate dealValue amountPaid telecallerIncentive remarks createdAt updatedAt isCallDone transferredToInstallation')
       .lean();
 
     // 4. Calculate Aggregate Metrics
@@ -778,11 +779,6 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       const createdById = lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString();
       if ((assignedById && crmAndAdminIds.has(assignedById)) || (createdById && crmAndAdminIds.has(createdById))) {
         leadsFromCrmUser++;
-      }
-
-      // Check if call is pending in this lead
-      if (lead.isCallDone === false && !['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'].includes(st)) {
-        totalPendingCalls++;
       }
 
       // Count remarks / calls
@@ -927,12 +923,13 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       }
 
       const assignedById = lead.assignedBy?._id ? lead.assignedBy._id.toString() : lead.assignedBy?.toString();
+      const createdById = lead.createdBy?._id ? lead.createdBy._id.toString() : lead.createdBy?.toString();
 
       if (primaryTelecallerId && leaderboardMap.has(primaryTelecallerId)) {
         const stats = leaderboardMap.get(primaryTelecallerId);
         stats.totalLeads++;
 
-        if (assignedById && crmUserIds.has(assignedById)) {
+        if ((assignedById && crmAndAdminIds.has(assignedById)) || (createdById && crmAndAdminIds.has(createdById))) {
           stats.fromCrmUser++;
         }
 
@@ -969,6 +966,10 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       }
     });
 
+    const validCrmAndAdminObjectIds = Array.from(crmAndAdminIds)
+      .filter(id => mongoose.Types.ObjectId.isValid(id))
+      .map(id => new mongoose.Types.ObjectId(id));
+
     const leaderboard = await Promise.all(
       Array.from(leaderboardMap.values()).map(async (item) => {
         const tObjectId = new mongoose.Types.ObjectId(item._id);
@@ -979,8 +980,8 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         });
         const crmOrAdminMatch = {
           $or: [
-            { assignedBy: { $in: Array.from(crmAndAdminIds).map(id => new mongoose.Types.ObjectId(id)) } },
-            { createdBy: { $in: Array.from(crmAndAdminIds).map(id => new mongoose.Types.ObjectId(id)) } }
+            { assignedBy: { $in: validCrmAndAdminObjectIds } },
+            { createdBy: { $in: validCrmAndAdminObjectIds } }
           ]
         };
         const itemFromCrmQuery = dateFilter
