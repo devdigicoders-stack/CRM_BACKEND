@@ -11,7 +11,7 @@ import { Admin } from '../models/Admin.js';
 import { Notification } from '../models/Notification.js';
 import { notifyRoles, notifySuperAdminAndAdmins } from '../services/notificationService.js';
 import { sendPushNotification } from '../config/firebase.js';
-import XLSX from 'xlsx';
+import * as XLSX from 'xlsx/xlsx.mjs';
 
 const getItemModel = (itemType) => {
   switch (itemType) {
@@ -1059,6 +1059,10 @@ export const getStockAnalytics = async (req, res, next) => {
         .map(w => w._id.toString());
     }
 
+    if (filteredWarehouseIds && filteredWarehouseIds.length > 0) {
+      productQuery['warehouseStock.warehouse'] = { $in: filteredWarehouseIds };
+    }
+
     const products = await Product.find(productQuery)
       .populate('category', 'name code')
       .populate('brand', 'name code')
@@ -1108,10 +1112,16 @@ export const getStockAnalytics = async (req, res, next) => {
 
     const movementQuery = {};
     if (movementDateFilter) {
-      movementQuery.createdAt = movementDateFilter;
+      movementQuery.$or = [
+        { date: movementDateFilter },
+        { createdAt: movementDateFilter }
+      ];
     }
     if (filteredWarehouseIds && filteredWarehouseIds.length > 0) {
       movementQuery.warehouse = { $in: filteredWarehouseIds };
+    }
+    if ((categoryId && categoryId !== 'all') || (brandId && brandId !== 'all') || (search && search.trim())) {
+      movementQuery.product = { $in: products.map(p => p._id) };
     }
 
     const movements = await StockMovement.find(movementQuery)
@@ -1249,7 +1259,8 @@ export const getStockAnalytics = async (req, res, next) => {
       let dayOut = 0;
 
       movements.forEach(m => {
-        if (m.createdAt && new Date(m.createdAt).toISOString().split('T')[0] === dateStr) {
+        const mDate = m.date || m.createdAt;
+        if (mDate && new Date(mDate).toISOString().split('T')[0] === dateStr) {
           const q = Math.abs(Number(m.quantity) || 0);
           if (['stock_in', 'purchase', 'opening_stock'].includes(m.transactionType)) {
             dayIn += q;
@@ -1317,7 +1328,32 @@ export const getStockAnalytics = async (req, res, next) => {
 // @access  Private (superAdmin, admin, stock)
 export const getStockDrilldown = async (req, res, next) => {
   try {
-    const { metricType, warehouseId, categoryId, brandId, city, search, stockStatus, timeframe, startDate, endDate } = req.query;
+    const {
+      metricType,
+      warehouseId,
+      categoryId,
+      brandId,
+      city,
+      search,
+      stockStatus,
+      timeframe,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 50,
+      all = false
+    } = req.query;
+
+    // 1. Resolve filtered warehouses
+    let filteredWarehouseIds = null;
+    if (warehouseId && warehouseId !== 'all') {
+      filteredWarehouseIds = [warehouseId.toString()];
+    } else if (city && city.trim()) {
+      const warehouses = await Warehouse.find({ status: 'active' }).select('name city').lean();
+      filteredWarehouseIds = warehouses
+        .filter(w => w.city && w.city.toLowerCase() === city.trim().toLowerCase())
+        .map(w => w._id.toString());
+    }
 
     // Check if drilling down into movements or products
     if (metricType === 'stockIn' || metricType === 'stockOut') {
@@ -1328,38 +1364,96 @@ export const getStockDrilldown = async (req, res, next) => {
         movementQuery.transactionType = 'stock_out';
       }
 
-      if (warehouseId && warehouseId !== 'all') {
-        movementQuery.warehouse = warehouseId;
+      if (filteredWarehouseIds && filteredWarehouseIds.length > 0) {
+        movementQuery.warehouse = { $in: filteredWarehouseIds };
       }
 
-      // Date range
+      // Filter products by category / brand / search
+      if ((categoryId && categoryId !== 'all') || (brandId && brandId !== 'all') || (search && search.trim())) {
+        const prodQuery = { status: 'active' };
+        if (categoryId && categoryId !== 'all') prodQuery.category = categoryId;
+        if (brandId && brandId !== 'all') prodQuery.brand = brandId;
+        if (search && search.trim()) {
+          const s = search.trim();
+          prodQuery.$or = [
+            { name: { $regex: s, $options: 'i' } },
+            { sku: { $regex: s, $options: 'i' } },
+            { description: { $regex: s, $options: 'i' } }
+          ];
+        }
+        const matchingProducts = await Product.find(prodQuery).select('_id').lean();
+        movementQuery.product = { $in: matchingProducts.map(p => p._id) };
+      }
+
+      // Date range / timeframe
       const now = new Date();
+      let movementDateFilter = null;
       if (startDate || endDate) {
-        movementQuery.createdAt = {};
+        movementDateFilter = {};
         if (startDate) {
           const s = new Date(startDate);
           s.setHours(0, 0, 0, 0);
-          movementQuery.createdAt.$gte = s;
+          movementDateFilter.$gte = s;
         }
         if (endDate) {
           const e = new Date(endDate);
           e.setHours(23, 59, 59, 999);
-          movementQuery.createdAt.$lte = e;
+          movementDateFilter.$lte = e;
+        }
+      } else if (timeframe && timeframe !== 'allTime') {
+        movementDateFilter = {};
+        if (timeframe === 'today') {
+          const s = new Date(now);
+          s.setHours(0, 0, 0, 0);
+          const e = new Date(now);
+          e.setHours(23, 59, 59, 999);
+          movementDateFilter.$gte = s;
+          movementDateFilter.$lte = e;
+        } else if (timeframe === 'thisWeek') {
+          const s = new Date(now);
+          s.setDate(now.getDate() - now.getDay());
+          s.setHours(0, 0, 0, 0);
+          movementDateFilter.$gte = s;
+        } else if (timeframe === 'thisMonth') {
+          const s = new Date(now.getFullYear(), now.getMonth(), 1);
+          s.setHours(0, 0, 0, 0);
+          movementDateFilter.$gte = s;
+        } else if (timeframe === 'thisYear') {
+          const s = new Date(now.getFullYear(), 0, 1);
+          s.setHours(0, 0, 0, 0);
+          movementDateFilter.$gte = s;
         }
       }
+
+      if (movementDateFilter) {
+        movementQuery.$or = [
+          { date: movementDateFilter },
+          { createdAt: movementDateFilter }
+        ];
+      }
+
+      const totalCount = await StockMovement.countDocuments(movementQuery);
+      const isAll = all === 'true' || all === true;
+      const pageNum = parseInt(page, 10) || 1;
+      const limitNum = isAll ? Math.max(totalCount, 1) : (parseInt(limit, 10) || 50);
+      const skip = (pageNum - 1) * limitNum;
 
       const movements = await StockMovement.find(movementQuery)
         .populate('product', 'name sku currentStock purchasePrice sellingPrice unit')
         .populate('warehouse', 'name code city')
         .populate('salesPerson', 'name email phone')
         .sort({ createdAt: -1 })
-        .limit(300)
+        .skip(skip)
+        .limit(limitNum)
         .lean();
 
       return res.status(200).json({
         status: 'success',
         drilldownType: 'movement',
         count: movements.length,
+        totalCount,
+        page: pageNum,
+        totalPages: Math.ceil(totalCount / limitNum) || 1,
         data: movements
       });
     }
@@ -1383,6 +1477,10 @@ export const getStockDrilldown = async (req, res, next) => {
       ];
     }
 
+    if (filteredWarehouseIds && filteredWarehouseIds.length > 0) {
+      productQuery['warehouseStock.warehouse'] = { $in: filteredWarehouseIds };
+    }
+
     let products = await Product.find(productQuery)
       .populate('category', 'name code')
       .populate('brand', 'name code')
@@ -1391,34 +1489,53 @@ export const getStockDrilldown = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Filter by warehouse or city if specified
-    if (warehouseId && warehouseId !== 'all') {
+    // Compute effectiveStock for each product based on filteredWarehouseIds
+    products.forEach(p => {
+      let effectiveStock = p.currentStock || 0;
+      if (filteredWarehouseIds && filteredWarehouseIds.length > 0) {
+        if (Array.isArray(p.warehouseStock)) {
+          effectiveStock = p.warehouseStock
+            .filter(ws => ws.warehouse && filteredWarehouseIds.includes(ws.warehouse._id ? ws.warehouse._id.toString() : ws.warehouse.toString()))
+            .reduce((sum, ws) => sum + (ws.quantity || 0), 0);
+        } else {
+          effectiveStock = 0;
+        }
+      }
+      p.effectiveStock = effectiveStock;
+    });
+
+    // Filter by metricType or stockStatus based on effectiveStock
+    const effectiveFilter = metricType || stockStatus;
+    if (effectiveFilter === 'outOfStock') {
+      products = products.filter(p => (p.effectiveStock !== undefined ? p.effectiveStock : (p.currentStock || 0)) <= 0);
+    } else if (effectiveFilter === 'lowStock') {
       products = products.filter(p => {
-        if (!Array.isArray(p.warehouseStock)) return false;
-        return p.warehouseStock.some(ws => ws.warehouse && (ws.warehouse._id ? ws.warehouse._id.toString() : ws.warehouse.toString()) === warehouseId);
+        const stock = p.effectiveStock !== undefined ? p.effectiveStock : (p.currentStock || 0);
+        const min = Number(p.minStockLevel) || 5;
+        return stock > 0 && stock <= min;
       });
-    } else if (city && city.trim()) {
+    } else if (effectiveFilter === 'inStock') {
       products = products.filter(p => {
-        if (!Array.isArray(p.warehouseStock)) return false;
-        return p.warehouseStock.some(ws => ws.warehouse && ws.warehouse.city && ws.warehouse.city.toLowerCase() === city.trim().toLowerCase());
+        const stock = p.effectiveStock !== undefined ? p.effectiveStock : (p.currentStock || 0);
+        const min = Number(p.minStockLevel) || 5;
+        return stock > min;
       });
     }
 
-    // Filter by metricType or stockStatus
-    const effectiveFilter = metricType || stockStatus;
-    if (effectiveFilter === 'outOfStock') {
-      products = products.filter(p => (p.currentStock || 0) <= 0);
-    } else if (effectiveFilter === 'lowStock') {
-      products = products.filter(p => (p.currentStock || 0) > 0 && (p.currentStock || 0) <= (p.minStockLevel || 5));
-    } else if (effectiveFilter === 'inStock') {
-      products = products.filter(p => (p.currentStock || 0) > (p.minStockLevel || 5));
-    }
+    const totalCount = products.length;
+    const isAll = all === 'true' || all === true;
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = isAll ? Math.max(totalCount, 1) : (parseInt(limit, 10) || 50);
+    const paginatedProducts = isAll ? products : products.slice((pageNum - 1) * limitNum, pageNum * limitNum);
 
     res.status(200).json({
       status: 'success',
       drilldownType: 'product',
-      count: products.length,
-      data: products
+      count: paginatedProducts.length,
+      totalCount,
+      page: pageNum,
+      totalPages: Math.ceil(totalCount / limitNum) || 1,
+      data: paginatedProducts
     });
 
   } catch (error) {
