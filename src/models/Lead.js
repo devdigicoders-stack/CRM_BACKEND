@@ -449,5 +449,11 @@ leadSchema.index({ createdAt: -1 });
 leadSchema.index({ isCallDone: 1, assignedTo: 1 });
 leadSchema.index({ assignedTo: 1, assignedAt: -1 });
 leadSchema.index({ assignedBy: 1, assignedAt: -1 });
+leadSchema.index({ originTelecaller: 1, createdAt: -1 });
+leadSchema.index({ assignedBranch: 1, createdAt: -1 });
+leadSchema.index({ assignedTo: 1, isCallDone: 1, status: 1 });
+leadSchema.index({ 'remarks.addedBy': 1, 'remarks.createdAt': -1 });
+leadSchema.index({ city: 1 });
+leadSchema.index({ state: 1 });
 
 export const Lead = mongoose.model('Lead', leadSchema);

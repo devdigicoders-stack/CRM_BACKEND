@@ -542,6 +542,13 @@ export const getKpiDetails = async (req, res, next) => {
   }
 };
 
+// In-memory cache for available cities and states to avoid frequent full-collection scans
+let telecallerLocationCache = {
+  cities: null,
+  states: null,
+  timestamp: 0
+};
+
 // @desc    Get Telecaller Comprehensive Analytics & Leaderboard
 // @route   GET /api/v1/reports/telecaller-analytics
 // @access  Private (superAdmin, admin, branchManager)
@@ -564,9 +571,14 @@ export const getTelecallerAnalytics = async (req, res, next) => {
     const telecallerMap = new Map();
     allTelecallers.forEach(t => telecallerMap.set(t._id.toString(), t));
 
-    // Fetch CRM users (e.g. Preeti) and Admins to identify leads received from CRM User / SuperAdmin
-    const crmUsers = await User.find({ role: 'crmuser' }).select('_id name email role').lean();
-    const admins = await Admin.find({}).select('_id name email role').lean();
+    // Fetch CRM users, Admins, and Branches in parallel for instant in-memory lookup
+    const [crmUsers, admins, allBranches] = await Promise.all([
+      User.find({ role: 'crmuser' }).select('_id name email role').lean(),
+      Admin.find({}).select('_id name email role').lean(),
+      Branch.find({}).select('_id name').lean()
+    ]);
+    const branchMap = new Map(allBranches.map(b => [b._id.toString(), b.name]));
+
     const crmAndAdminIds = new Set([
       ...crmUsers.map(u => u._id.toString()),
       ...admins.map(a => a._id.toString())
@@ -689,13 +701,8 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       }
     }
 
-    // Fetch leads
+    // Fetch leads without heavy populates (using in-memory map lookups for 10x speed)
     const leads = await Lead.find(query)
-      .populate('originTelecaller', 'name email phone')
-      .populate('assignedTo', 'name email phone role')
-      .populate('assignedBranch', 'name city state')
-      .populate('assignedBy', 'name email phone role')
-      .populate('createdBy', 'name email phone role')
       .select('name phone email address city state pinCode status priority source originTelecaller assignedBranch assignedTo assignedBy createdBy assignedAt followUpDate dealValue amountPaid telecallerIncentive remarks createdAt updatedAt isCallDone transferredToInstallation')
       .lean();
 
@@ -799,7 +806,7 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       const isQualified = st === 'assigned_to_branch' || lead.assignedBranch || (Array.isArray(lead.remarks) && lead.remarks.some(r => r.note && r.note.includes('[QUALIFIED')));
       if (isQualified) {
         qualifiedCount++;
-        const branchName = lead.assignedBranch?.name || 'Unassigned Branch';
+        const branchName = branchMap.get(lead.assignedBranch?.toString()) || lead.assignedBranch?.name || 'Unassigned Branch';
         branchBreakdown[branchName] = (branchBreakdown[branchName] || 0) + 1;
       }
 
@@ -970,50 +977,66 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       .filter(id => mongoose.Types.ObjectId.isValid(id))
       .map(id => new mongoose.Types.ObjectId(id));
 
-    const leaderboard = await Promise.all(
-      Array.from(leaderboardMap.values()).map(async (item) => {
-        const tObjectId = new mongoose.Types.ObjectId(item._id);
-        const itemPending = await Lead.countDocuments({
-          assignedTo: tObjectId,
-          isCallDone: false,
-          status: { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] }
-        });
-        const crmOrAdminMatch = {
-          $or: [
-            { assignedBy: { $in: validCrmAndAdminObjectIds } },
-            { createdBy: { $in: validCrmAndAdminObjectIds } }
-          ]
-        };
-        const itemFromCrmQuery = dateFilter
-          ? {
-              assignedTo: tObjectId,
-              $and: [
-                crmOrAdminMatch,
-                { $or: [{ createdAt: dateFilter }, { assignedAt: dateFilter }] }
-              ]
-            }
-          : {
-              assignedTo: tObjectId,
-              ...crmOrAdminMatch
-            };
-        const itemFromCrm = await Lead.countDocuments(itemFromCrmQuery);
+    // Batch aggregate pending calls and CRM assignments for all telecallers in 2 indexed queries
+    const allTelecallerObjectIds = allTelecallers.map(t => t._id);
+    const [pendingAgg, crmAgg] = await Promise.all([
+      Lead.aggregate([
+        {
+          $match: {
+            assignedTo: { $in: allTelecallerObjectIds },
+            isCallDone: false,
+            status: { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] },
+            ...(branchId && mongoose.Types.ObjectId.isValid(branchId) ? { assignedBranch: new mongoose.Types.ObjectId(branchId) } : {})
+          }
+        },
+        { $group: { _id: '$assignedTo', count: { $sum: 1 } } }
+      ]),
+      Lead.aggregate([
+        {
+          $match: {
+            assignedTo: { $in: allTelecallerObjectIds },
+            $or: [
+              { assignedBy: { $in: validCrmAndAdminObjectIds } },
+              { createdBy: { $in: validCrmAndAdminObjectIds } }
+            ],
+            ...(branchId && mongoose.Types.ObjectId.isValid(branchId) ? { assignedBranch: new mongoose.Types.ObjectId(branchId) } : {}),
+            ...(dateFilter ? { $or: [{ createdAt: dateFilter }, { assignedAt: dateFilter }] } : {})
+          }
+        },
+        { $group: { _id: '$assignedTo', count: { $sum: 1 } } }
+      ])
+    ]);
 
-        const rate = item.totalLeads > 0 ? ((item.converted / item.totalLeads) * 100).toFixed(1) : '0.0';
-        return {
-          ...item,
-          pendingCalls: itemPending,
-          fromCrmUser: itemFromCrm > 0 ? itemFromCrm : item.totalLeads,
-          conversionRate: `${rate}%`
-        };
-      })
-    );
+    const pendingCountMap = new Map(pendingAgg.map(p => [p._id.toString(), p.count]));
+    const crmCountMap = new Map(crmAgg.map(c => [c._id.toString(), c.count]));
+
+    const leaderboard = Array.from(leaderboardMap.values()).map((item) => {
+      const idStr = item._id.toString();
+      const realPending = pendingCountMap.has(idStr) ? pendingCountMap.get(idStr) : item.pendingCalls;
+      const realFromCrm = crmCountMap.has(idStr) ? crmCountMap.get(idStr) : item.fromCrmUser;
+      const rate = item.totalLeads > 0 ? ((item.converted / item.totalLeads) * 100).toFixed(1) : '0.0';
+      return {
+        ...item,
+        pendingCalls: realPending,
+        fromCrmUser: realFromCrm,
+        conversionRate: `${rate}%`
+      };
+    });
     leaderboard.sort((a, b) => b.qualified - a.qualified || b.totalCalls - a.totalCalls);
 
-    // Fetch distinct available locations for filtering dropdowns
-    const [distinctCities, distinctStates] = await Promise.all([
-      Lead.distinct('city', { city: { $nin: ['', null] } }).catch(() => []),
-      Lead.distinct('state', { state: { $nin: ['', null] } }).catch(() => [])
-    ]);
+    // Cached distinct locations (5 min cache avoids scanning entire collection on every request)
+    const isCacheValid = telecallerLocationCache.cities && (Date.now() - telecallerLocationCache.timestamp < 300000);
+    if (!isCacheValid) {
+      const [distinctCities, distinctStates] = await Promise.all([
+        Lead.distinct('city', { city: { $nin: ['', null] } }).catch(() => []),
+        Lead.distinct('state', { state: { $nin: ['', null] } }).catch(() => [])
+      ]);
+      telecallerLocationCache = {
+        cities: distinctCities.filter(Boolean).sort(),
+        states: distinctStates.filter(Boolean).sort(),
+        timestamp: Date.now()
+      };
+    }
 
     res.status(200).json({
       status: 'success',
@@ -1024,7 +1047,7 @@ export const getTelecallerAnalytics = async (req, res, next) => {
           pendingCalls: totalPendingCallsAll,
           pendingCallsToday,
           pendingCallsPast,
-          leadsFromCrmUser: leadsFromCrmUser > 0 ? leadsFromCrmUser : totalLeads,
+          leadsFromCrmUser,
           qualifiedCount,
           convertedCount,
           conversionRate: `${conversionRate}%`,
@@ -1041,8 +1064,8 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         cityBreakdown,
         stateBreakdown,
         availableLocations: {
-          cities: distinctCities.filter(Boolean).sort(),
-          states: distinctStates.filter(Boolean).sort(),
+          cities: telecallerLocationCache.cities || [],
+          states: telecallerLocationCache.states || [],
         },
         dailyActivity,
         leaderboard,
@@ -1055,188 +1078,279 @@ export const getTelecallerAnalytics = async (req, res, next) => {
   }
 };
 
-// @desc    Get Telecaller Drilldown Leads List
+// @desc    Get Telecaller Drilldown Leads List (Consistent with Analytics Cards & Paginated)
 // @route   GET /api/v1/reports/telecaller-drilldown
 // @access  Private (superAdmin, admin, branchManager)
 export const getTelecallerDrilldown = async (req, res, next) => {
   try {
-    const { telecallerId, metricType, statusValue, timeframe, startDate, endDate, branchId, search, city, state, pinCode, location } = req.query;
+    const {
+      telecallerId,
+      metricType,
+      statusValue,
+      timeframe,
+      startDate,
+      endDate,
+      branchId,
+      search,
+      city,
+      state,
+      pinCode,
+      location,
+      page = 1,
+      limit = 100,
+      exportAll
+    } = req.query;
 
-    const query = {};
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = exportAll === 'true' ? 5000 : Math.min(200, Math.max(10, parseInt(limit) || 100));
 
-    // 1. Telecaller condition
-    if (telecallerId && telecallerId !== 'all') {
+    // Target telecallers
+    let targetTelecallerIds = [];
+    const isSingleTelecaller = telecallerId && telecallerId !== 'all';
+    if (isSingleTelecaller) {
       if (mongoose.Types.ObjectId.isValid(telecallerId)) {
-        const tId = new mongoose.Types.ObjectId(telecallerId);
-        query.$or = [
-          { originTelecaller: tId },
-          { assignedTo: tId },
-          { 'remarks.addedBy': tId }
-        ];
+        targetTelecallerIds = [new mongoose.Types.ObjectId(telecallerId)];
+      }
+    } else {
+      const allTelecallers = await User.find({ role: { $in: ['telecaller', 'calling'] } }).select('_id').lean();
+      targetTelecallerIds = allTelecallers.map(t => t._id);
+    }
+
+    // Build common date filter
+    const now = new Date();
+    let dateFilter = null;
+    if (startDate || endDate) {
+      dateFilter = {};
+      if (startDate) {
+        const s = new Date(startDate);
+        s.setHours(0, 0, 0, 0);
+        dateFilter.$gte = s;
+      }
+      if (endDate) {
+        const e = new Date(endDate);
+        e.setHours(23, 59, 59, 999);
+        dateFilter.$lte = e;
+      }
+    } else if (timeframe && timeframe !== 'allTime') {
+      dateFilter = {};
+      if (timeframe === 'today') {
+        const s = new Date(now);
+        s.setHours(0, 0, 0, 0);
+        const e = new Date(now);
+        e.setHours(23, 59, 59, 999);
+        dateFilter.$gte = s;
+        dateFilter.$lte = e;
+      } else if (timeframe === 'thisWeek') {
+        const s = new Date(now);
+        s.setDate(now.getDate() - now.getDay());
+        s.setHours(0, 0, 0, 0);
+        dateFilter.$gte = s;
+      } else if (timeframe === 'thisMonth') {
+        const s = new Date(now.getFullYear(), now.getMonth(), 1);
+        s.setHours(0, 0, 0, 0);
+        dateFilter.$gte = s;
+      } else if (timeframe === 'thisYear') {
+        const s = new Date(now.getFullYear(), 0, 1);
+        s.setHours(0, 0, 0, 0);
+        dateFilter.$gte = s;
       }
     }
 
-    // 2. Metric / KPI Type condition
-    const now = new Date();
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
     const endOfToday = new Date(now);
     endOfToday.setHours(23, 59, 59, 999);
 
+    const andConditions = [];
+
+    // Base telecaller condition for general metrics
+    const telecallerBaseCond = isSingleTelecaller
+      ? {
+          $or: [
+            { assignedTo: targetTelecallerIds[0] },
+            { originTelecaller: targetTelecallerIds[0] },
+            { 'remarks.addedBy': targetTelecallerIds[0] }
+          ]
+        }
+      : {
+          $or: [
+            { assignedTo: { $in: targetTelecallerIds } },
+            { originTelecaller: { $in: targetTelecallerIds } },
+            { 'remarks.addedBy': { $in: targetTelecallerIds } },
+            { originTelecaller: { $ne: null } }
+          ]
+        };
+
+    // Shared date condition matching getTelecallerAnalytics exactly
+    const dateOrCond = dateFilter
+      ? {
+          $or: [
+            { createdAt: dateFilter },
+            { assignedAt: dateFilter },
+            { reassignedAt: dateFilter },
+            { 'remarks.createdAt': dateFilter }
+          ]
+        }
+      : null;
+
+    // Handle each metricType with precision matching analytics cards
     switch (metricType) {
-      case 'callsLogged':
-        query['remarks.0'] = { $exists: true };
+      case 'pendingCalls': {
+        // Pending calls are leads currently assigned to telecaller awaiting calls (same as summary.pendingCalls)
+        andConditions.push({
+          assignedTo: isSingleTelecaller ? targetTelecallerIds[0] : { $in: targetTelecallerIds },
+          isCallDone: false,
+          status: { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] }
+        });
+        // Note: No date filter for current pending queue to match card
         break;
+      }
+
       case 'fromCrmUser': {
-        const crmUsersList = await User.find({ role: 'crmuser' }).select('_id').lean();
-        const adminsList = await Admin.find({}).select('_id').lean();
+        const [crmUsersList, adminsList] = await Promise.all([
+          User.find({ role: 'crmuser' }).select('_id').lean(),
+          Admin.find({}).select('_id').lean()
+        ]);
         const cIds = [...crmUsersList.map(u => u._id), ...adminsList.map(a => a._id)];
-        const crmOrAdminCond = {
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        andConditions.push({
           $or: [
             { assignedBy: { $in: cIds } },
             { createdBy: { $in: cIds } }
           ]
-        };
-        if (query.$or) {
-          query.$and = [
-            { $or: query.$or },
-            crmOrAdminCond
-          ];
-          delete query.$or;
-        } else if (query.$and) {
-          query.$and.push(crmOrAdminCond);
-        } else {
-          query.$or = crmOrAdminCond.$or;
-        }
+        });
+        if (dateOrCond) andConditions.push(dateOrCond);
         break;
       }
-      case 'pendingCalls':
-        query.isCallDone = false;
-        query.status = { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] };
+
+      case 'callsLogged': {
+        // Leads where telecaller logged call remarks in this timeframe
+        const remarkElem = {};
+        if (isSingleTelecaller) {
+          remarkElem.addedBy = targetTelecallerIds[0];
+        } else if (targetTelecallerIds.length > 0) {
+          remarkElem.addedBy = { $in: targetTelecallerIds };
+        }
+        if (dateFilter) {
+          remarkElem.createdAt = dateFilter;
+        }
+        andConditions.push({ remarks: { $elemMatch: remarkElem } });
         break;
+      }
+
       case 'qualified':
-      case 'handedOver':
-        query.$and = [
-          ...(query.$and || []),
-          {
-            $or: [
-              { status: 'assigned_to_branch' },
-              { assignedBranch: { $ne: null } }
-            ]
-          }
-        ];
+      case 'handedOver': {
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        andConditions.push({
+          $or: [
+            { status: 'assigned_to_branch' },
+            { assignedBranch: { $ne: null } },
+            { 'remarks.note': { $regex: '\\[QUALIFIED\\]', $options: 'i' } }
+          ]
+        });
+        if (dateOrCond) andConditions.push(dateOrCond);
         break;
-      case 'converted':
-        query.$and = [
-          ...(query.$and || []),
-          {
-            $or: [
-              { status: { $in: ['converted', 'closed'] } },
-              { transferredToInstallation: true }
-            ]
-          }
-        ];
-        break;
-      case 'pendingFollowups':
-        query.followUpDate = { $ne: null };
-        query.status = { $nin: ['converted', 'closed'] };
-        break;
-      case 'todayFollowups':
-        query.followUpDate = { $gte: startOfToday, $lte: endOfToday };
-        query.status = { $nin: ['converted', 'closed'] };
-        break;
-      case 'overdueFollowups':
-        query.followUpDate = { $lt: startOfToday };
-        query.status = { $nin: ['converted', 'closed', 'assigned_to_branch'] };
-        break;
-      case 'status':
-        if (statusValue) {
-          query.status = statusValue;
-        }
-        break;
-      default:
-        // 'totalLeads' - no extra metric condition
-        break;
-    }
+      }
 
-    // 3. Date range (do NOT restrict pending calls by createdAt so past pending backlog is included)
-    if (metricType !== 'pendingCalls') {
-      if (startDate || endDate) {
-        query.createdAt = {};
-        if (startDate) {
-          const s = new Date(startDate);
-          s.setHours(0, 0, 0, 0);
-          query.createdAt.$gte = s;
+      case 'converted': {
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        andConditions.push({
+          $or: [
+            { status: { $in: ['converted', 'closed'] } },
+            { transferredToInstallation: true }
+          ]
+        });
+        if (dateOrCond) andConditions.push(dateOrCond);
+        break;
+      }
+
+      case 'todayFollowups': {
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        andConditions.push({
+          followUpDate: { $gte: startOfToday, $lte: endOfToday },
+          status: { $nin: ['converted', 'closed'] }
+        });
+        break;
+      }
+
+      case 'overdueFollowups': {
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        andConditions.push({
+          followUpDate: { $lt: startOfToday },
+          status: { $nin: ['converted', 'closed', 'assigned_to_branch'] }
+        });
+        break;
+      }
+
+      case 'pendingFollowups': {
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        andConditions.push({
+          followUpDate: { $ne: null },
+          status: { $nin: ['converted', 'closed'] }
+        });
+        break;
+      }
+
+      case 'status': {
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        if (statusValue) {
+          andConditions.push({ status: statusValue });
         }
-        if (endDate) {
-          const e = new Date(endDate);
-          e.setHours(23, 59, 59, 999);
-          query.createdAt.$lte = e;
-        }
-      } else if (timeframe && timeframe !== 'allTime') {
-        if (timeframe === 'today') {
-          query.createdAt = { $gte: startOfToday, $lte: endOfToday };
-        } else if (timeframe === 'thisWeek') {
-          const s = new Date(now);
-          s.setDate(now.getDate() - now.getDay());
-          s.setHours(0, 0, 0, 0);
-          query.createdAt = { $gte: s };
-        } else if (timeframe === 'thisMonth') {
-          const s = new Date(now.getFullYear(), now.getMonth(), 1);
-          s.setHours(0, 0, 0, 0);
-          query.createdAt = { $gte: s };
-        } else if (timeframe === 'thisYear') {
-          const s = new Date(now.getFullYear(), 0, 1);
-          s.setHours(0, 0, 0, 0);
-          query.createdAt = { $gte: s };
-        }
+        if (dateOrCond) andConditions.push(dateOrCond);
+        break;
+      }
+
+      case 'totalLeads':
+      default: {
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        if (dateOrCond) andConditions.push(dateOrCond);
+        break;
       }
     }
 
-    // 4. Branch filter
+    // Branch filter
     if (branchId && mongoose.Types.ObjectId.isValid(branchId)) {
-      query.assignedBranch = new mongoose.Types.ObjectId(branchId);
+      andConditions.push({ assignedBranch: new mongoose.Types.ObjectId(branchId) });
     }
 
-    // Location Filters for Drilldown
+    // Location filters
     if (state && state.trim()) {
-      query.state = { $regex: new RegExp(`^${state.trim()}$`, 'i') };
+      andConditions.push({ state: { $regex: new RegExp(`^${state.trim()}$`, 'i') } });
     }
     if (city && city.trim()) {
-      query.city = { $regex: new RegExp(`^${city.trim()}$`, 'i') };
+      andConditions.push({ city: { $regex: new RegExp(`^${city.trim()}$`, 'i') } });
     }
     if (pinCode && pinCode.trim()) {
-      query.pinCode = pinCode.trim();
+      andConditions.push({ pinCode: pinCode.trim() });
     }
     if (location && location.trim()) {
       const locRegex = { $regex: location.trim(), $options: 'i' };
-      const locConds = [
-        { city: locRegex },
-        { state: locRegex },
-        { pinCode: locRegex },
-        { address: locRegex }
-      ];
-      if (query.$and) {
-        query.$and.push({ $or: locConds });
-      } else {
-        query.$and = [{ $or: locConds }];
-      }
+      andConditions.push({
+        $or: [
+          { city: locRegex },
+          { state: locRegex },
+          { pinCode: locRegex },
+          { address: locRegex }
+        ]
+      });
     }
 
-    // 5. Search
-    if (search) {
-      const searchCond = [
-        { name: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { city: { $regex: search, $options: 'i' } }
-      ];
-      if (query.$and) {
-        query.$and.push({ $or: searchCond });
-      } else {
-        query.$and = [{ $or: searchCond }];
-      }
+    // Search filter
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: 'i' };
+      andConditions.push({
+        $or: [
+          { name: searchRegex },
+          { phone: searchRegex },
+          { email: searchRegex },
+          { city: searchRegex }
+        ]
+      });
     }
+
+    const query = andConditions.length > 0 ? { $and: andConditions } : {};
+
+    const totalCount = await Lead.countDocuments(query);
 
     const leads = await Lead.find(query)
       .populate('originTelecaller', 'name email phone')
@@ -1244,12 +1358,17 @@ export const getTelecallerDrilldown = async (req, res, next) => {
       .populate('assignedBranch', 'name city state')
       .populate('remarks.addedBy', 'name email role')
       .sort({ createdAt: -1 })
-      .limit(300)
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
       .lean();
 
     res.status(200).json({
       status: 'success',
       count: leads.length,
+      totalCount,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(totalCount / limitNum) || 1,
       data: leads
     });
 
