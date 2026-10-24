@@ -1,7 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import XLSX from 'xlsx';
+import * as XLSX from 'xlsx/xlsx.mjs';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
 import { Admin } from '../models/Admin.js';

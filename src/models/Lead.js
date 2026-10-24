@@ -62,7 +62,8 @@ const leadSchema = new mongoose.Schema(
       enum: [
         'new', 'unscreened', 'screening_in_progress', 'assigned', 'interested', 
         'in_process', 'callback', 'invalid_number', 'not_interested', 'qualified', 
-        'disqualified', 'assigned_to_branch', 'converted', 'closed', 'call_done'
+        'disqualified', 'assigned_to_branch', 'converted', 'closed', 'call_done',
+        'ringing', 'busy', 'teacher_required_later'
       ],
       default: 'new',
     },
