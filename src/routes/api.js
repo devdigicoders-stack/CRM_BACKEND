@@ -42,7 +42,7 @@ apiRouter.post('/leads/:id/log-call', protect, leadController.logTelecallerCall)
 // --- Lead Routes ---
 apiRouter.get('/leads/staff-data-summary', protect, restrictTo('superAdmin', 'admin'), leadController.getStaffDataSummary);
 apiRouter.post('/leads/bulk-delete', protect, restrictTo('superAdmin'), leadController.bulkDeleteLeads);
-apiRouter.post('/leads/bulk-reassign', protect, restrictTo('superAdmin', 'admin', 'crmuser'), leadController.bulkReassignLeads);
+apiRouter.post('/leads/bulk-reassign', protect, restrictTo('superAdmin', 'admin', 'crmuser', 'telecaller', 'calling'), leadController.bulkReassignLeads);
 apiRouter.post('/leads/bulk-distribute', protect, restrictTo('superAdmin', 'admin', 'crmuser'), leadController.bulkDistributeLeads);
 apiRouter.post('/leads/bulk-upload', protect, restrictTo('superAdmin', 'admin'), leadController.uploadBulkMiddleware, leadController.bulkUploadLeads);
 apiRouter.post('/leads', protect, checkPermission('leads'), leadController.createLead);
@@ -51,7 +51,7 @@ apiRouter.get('/leads/check-phone', protect, checkPermission('leads'), leadContr
 apiRouter.get('/leads/:id', protect, checkPermission('leads'), leadController.getLeadById);
 apiRouter.put('/leads/:id', protect, checkPermission('leads'), leadController.updateLead);
 apiRouter.delete('/leads/:id', protect, restrictTo('superAdmin'), leadController.deleteLead);
-apiRouter.put('/leads/:id/assign', protect, restrictTo('superAdmin', 'admin', 'calling', 'crmuser'), checkPermission('leads'), leadController.assignLead);
+apiRouter.put('/leads/:id/assign', protect, restrictTo('superAdmin', 'admin', 'calling', 'telecaller', 'crmuser'), checkPermission('leads'), leadController.assignLead);
 apiRouter.post('/leads/:id/remarks', protect, checkPermission('leads'), leadController.addRemark);
 apiRouter.put('/leads/:id/sale-details', protect, checkPermission('leads'), leadController.updateSaleDetails);
 apiRouter.put('/leads/:id/sale-documents', protect, checkPermission('leads'), leadController.uploadAgreementMiddleware, leadController.uploadSaleDocuments);

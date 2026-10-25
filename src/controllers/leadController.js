@@ -675,7 +675,7 @@ export const assignLead = async (req, res, next) => {
     }
 
     const canAssign =
-      ['superAdmin', 'admin', 'sales', 'crmuser'].includes(req.user.role) ||
+      ['superAdmin', 'admin', 'sales', 'crmuser', 'telecaller', 'calling'].includes(req.user.role) ||
       lead.assignedTo?.toString() === req.user._id.toString();
     if (!canAssign) {
       res.status(403);
@@ -1753,9 +1753,9 @@ export const bulkDeleteLeads = async (req, res, next) => {
 // @access  Private (Super Admin & Admin)
 export const bulkReassignLeads = async (req, res, next) => {
   try {
-    if (!['superAdmin', 'admin'].includes(req.user.role)) {
+    if (!['superAdmin', 'admin', 'crmuser', 'telecaller', 'calling'].includes(req.user.role)) {
       res.status(403);
-      throw new Error('Only Super Admin and Admin are authorized to bulk reassign staff leads');
+      throw new Error('You are not authorized to bulk reassign leads');
     }
 
     const { targetUserId, leadIds, userIds, status, startDate, endDate } = req.body;
@@ -2017,11 +2017,11 @@ export const qualifyAndAssignBranch = async (req, res, next) => {
       throw new Error('Lead not found');
     }
 
-    // Check Lock System (Max 1 correction for non-admin)
-    const isSuperAdmin = ['superAdmin', 'admin'].includes(req.user.role);
-    if (lead.isLocked && !isSuperAdmin) {
+    // Check authorization for reassignment
+    const isAuthorized = ['superAdmin', 'admin', 'telecaller', 'calling', 'crmuser', 'branchManager'].includes(req.user.role);
+    if (!isAuthorized) {
       res.status(403);
-      throw new Error('Lead is locked after maximum allowed reassignments. Only Super Admin can modify.');
+      throw new Error('You do not have permission to assign or reassign this lead.');
     }
 
     const targetBranch = await Branch.findById(branchId);
@@ -2029,6 +2029,8 @@ export const qualifyAndAssignBranch = async (req, res, next) => {
       res.status(404);
       throw new Error('Target Branch not found');
     }
+
+    const isReassign = Boolean(lead.assignedBranch);
 
     // Set permanent Origin Telecaller if not already set
     if (!lead.originTelecaller) {
@@ -2055,19 +2057,24 @@ export const qualifyAndAssignBranch = async (req, res, next) => {
       lead.branchOwner = branchUserId;
       lead.assignedTo = branchUserId;
       lead.assignedToModel = 'User';
+    } else {
+      lead.branchOwner = null;
     }
 
     lead.status = 'assigned_to_branch';
     lead.isCallDone = false;
 
-    // Increment reassignment count & lock if >= 1
+    // Track reassignment
     lead.reassignmentCount = (lead.reassignmentCount || 0) + 1;
-    if (lead.reassignmentCount >= 1) {
-      lead.isLocked = true;
+    lead.isLocked = false;
+    if (isReassign) {
+      lead.reassignedAt = new Date();
+      lead.reassignedBy = req.user._id;
     }
 
-    // Append Handover Remark
-    const remarkNote = `[QUALIFIED & HANDED OVER TO ${targetBranch.name.toUpperCase()}] ${handoverRemark || 'Lead verified and routed to branch.'}`;
+    // Append Handover / Reassignment Remark
+    const remarkPrefix = isReassign ? 'REASSIGNED TO' : 'QUALIFIED & HANDED OVER TO';
+    const remarkNote = `[${remarkPrefix} ${targetBranch.name.toUpperCase()}] ${handoverRemark || (isReassign ? 'Lead reassigned to branch.' : 'Lead verified and routed to branch.')}`;
     lead.remarks.push({
       note: remarkNote,
       addedBy: req.user._id,
@@ -2080,8 +2087,8 @@ export const qualifyAndAssignBranch = async (req, res, next) => {
     if (branchUserId) {
       await sendNotification(
         branchUserId,
-        '📍 New Qualified Lead Assigned',
-        `Lead ${lead.name || lead.phone} has been assigned to your branch by Telecaller ${req.user.name}`,
+        isReassign ? '🔄 Lead Reassigned to You' : '📍 New Qualified Lead Assigned',
+        `Lead ${lead.name || lead.phone} has been ${isReassign ? 'reassigned' : 'assigned'} to you at ${targetBranch.name} by Telecaller ${req.user.name}`,
         lead._id
       );
     }
