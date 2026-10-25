@@ -636,71 +636,59 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       }
     }
 
-    // 3. Build Query
-    const query = {};
-    if (targetTelecallerIds.length > 0) {
-      if (isSingleTelecaller) {
-        query.$or = [
-          { originTelecaller: { $in: targetTelecallerIds } },
-          { assignedTo: { $in: targetTelecallerIds } },
-          { 'remarks.addedBy': { $in: targetTelecallerIds } }
-        ];
-      } else {
-        query.$or = [
-          { originTelecaller: { $in: targetTelecallerIds } },
-          { assignedTo: { $in: targetTelecallerIds } },
-          { 'remarks.addedBy': { $in: targetTelecallerIds } },
-          { originTelecaller: { $ne: null } }
-        ];
-      }
-    }
+    // 3. Build Telecaller Lead Conditions
+    // Real assignment condition matching Telecaller Dashboard exactly (assignedTo or originTelecaller)
+    const telecallerAssignCond = isSingleTelecaller
+      ? { $or: [{ assignedTo: targetTelecallerIds[0] }, { originTelecaller: targetTelecallerIds[0] }] }
+      : { $or: [{ assignedTo: { $in: targetTelecallerIds } }, { originTelecaller: { $in: targetTelecallerIds } }] };
 
-    if (dateFilter) {
-      const dateOrConditions = [
-        { createdAt: dateFilter },
-        { assignedAt: dateFilter },
-        { reassignedAt: dateFilter },
-        { 'remarks.createdAt': dateFilter }
-      ];
-      if (query.$or) {
-        query.$and = [
-          { $or: query.$or },
-          { $or: dateOrConditions }
-        ];
-        delete query.$or;
-      } else {
-        query.$or = dateOrConditions;
-      }
-    }
+    // Date filter on lead assignment (created, assigned, or reassigned - NOT when remarks were added)
+    const assignDateCond = dateFilter
+      ? { $or: [{ assignedAt: dateFilter }, { createdAt: dateFilter }, { reassignedAt: dateFilter }] }
+      : null;
 
+    // Common location & branch filters
+    const commonConds = [];
+    const commonFilters = {};
     if (branchId && mongoose.Types.ObjectId.isValid(branchId)) {
-      query.assignedBranch = new mongoose.Types.ObjectId(branchId);
+      const bObjId = new mongoose.Types.ObjectId(branchId);
+      commonConds.push({ assignedBranch: bObjId });
+      commonFilters.assignedBranch = bObjId;
     }
-
-    // Location Filters (State, City, PinCode, Location text)
     if (state && state.trim()) {
-      query.state = { $regex: new RegExp(`^${state.trim()}$`, 'i') };
+      const sRegex = { $regex: new RegExp(`^${state.trim()}$`, 'i') };
+      commonConds.push({ state: sRegex });
+      commonFilters.state = sRegex;
     }
     if (city && city.trim()) {
-      query.city = { $regex: new RegExp(`^${city.trim()}$`, 'i') };
+      const cRegex = { $regex: new RegExp(`^${city.trim()}$`, 'i') };
+      commonConds.push({ city: cRegex });
+      commonFilters.city = cRegex;
     }
     if (pinCode && pinCode.trim()) {
-      query.pinCode = pinCode.trim();
+      commonConds.push({ pinCode: pinCode.trim() });
+      commonFilters.pinCode = pinCode.trim();
     }
     if (location && location.trim()) {
       const locRegex = { $regex: location.trim(), $options: 'i' };
-      const locConds = [
+      const locOr = [
         { city: locRegex },
         { state: locRegex },
         { pinCode: locRegex },
         { address: locRegex }
       ];
-      if (query.$and) {
-        query.$and.push({ $or: locConds });
-      } else {
-        query.$and = [{ $or: locConds }];
-      }
+      commonConds.push({ $or: locOr });
+      commonFilters.$or = locOr;
     }
+
+    // Lead assignment query: leads assigned to telecaller in the date timeframe
+    const assignedLeadsQuery = {
+      $and: [
+        telecallerAssignCond,
+        ...(assignDateCond ? [assignDateCond] : []),
+        ...commonConds
+      ]
+    };
 
     // 4. Ultra-fast parallel MongoDB aggregation pipeline (100x+ faster than downloading all leads)
     const startOfToday = new Date(now);
@@ -718,338 +706,139 @@ export const getTelecallerAnalytics = async (req, res, next) => {
 
     const allTelecallerObjectIds = allTelecallers.map(t => t._id);
 
+    // Pending Calls query (matches Telecaller Screening Queue)
     const pendingCallsBaseQuery = {
-      assignedTo: { $in: targetTelecallerIds },
-      isCallDone: false,
-      status: { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] }
+      $and: [
+        { assignedTo: isSingleTelecaller ? targetTelecallerIds[0] : { $in: targetTelecallerIds } },
+        { isCallDone: false },
+        { status: { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] } },
+        ...commonConds
+      ]
     };
-    if (branchId && mongoose.Types.ObjectId.isValid(branchId)) {
-      pendingCallsBaseQuery.assignedBranch = new mongoose.Types.ObjectId(branchId);
-    }
+
+    // Handed over to sales query
+    const handoverQuery = {
+      $and: [
+        telecallerAssignCond,
+        {
+          $or: [
+            { status: 'assigned_to_branch' },
+            { assignedBranch: { $ne: null } },
+            { branchOwner: { $ne: null } }
+          ]
+        },
+        ...(dateFilter ? [{
+          $or: [
+            { updatedAt: dateFilter },
+            { 'remarks.createdAt': dateFilter }
+          ]
+        }] : []),
+        ...commonConds
+      ]
+    };
+
+    // Converted query
+    const convertedQuery = {
+      $and: [
+        telecallerAssignCond,
+        {
+          $or: [
+            { status: { $in: ['converted', 'closed'] } },
+            { transferredToInstallation: true }
+          ]
+        },
+        ...(dateFilter ? [{
+          $or: [
+            { updatedAt: dateFilter },
+            { 'remarks.createdAt': dateFilter }
+          ]
+        }] : []),
+        ...commonConds
+      ]
+    };
+
+    // Follow-ups base query
+    const followupBaseQuery = {
+      $and: [
+        telecallerAssignCond,
+        ...commonConds
+      ]
+    };
 
     const [
-      mainAggResults,
+      totalLeads,
+      leadsFromCrmUser,
+      qualifiedCount,
+      convertedResults,
       callsAggResults,
       dailyCallsResults,
       dailyUpdatesResults,
-      pendingAgg,
-      crmAgg,
       totalPendingCallsAll,
-      pendingCallsToday
+      pendingCallsToday,
+      followupSummaryResults,
+      statusBreakdownResults,
+      branchBreakdownResults,
+      cityBreakdownResults,
+      stateBreakdownResults,
+      leaderboardAssignedAgg,
+      leaderboardCrmAgg,
+      leaderboardHandoverAgg,
+      leaderboardConvertedAgg,
+      leaderboardPendingAgg
     ] = await Promise.all([
-      // A. Main Facet Aggregation (Summary, Statuses, Branches, Cities, States, Telecaller Metrics)
-      Lead.aggregate([
-        { $match: query },
-        {
-          $facet: {
-            summary: [
-              {
-                $group: {
-                  _id: null,
-                  totalLeads: { $sum: 1 },
-                  qualifiedCount: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $or: [
-                            { $eq: ['$status', 'assigned_to_branch'] },
-                            { $ne: [{ $ifNull: ['$assignedBranch', null] }, null] }
-                          ]
-                        },
-                        1,
-                        0
-                      ]
-                    }
-                  },
-                  convertedCount: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $or: [
-                            { $in: ['$status', ['converted', 'closed']] },
-                            { $eq: ['$transferredToInstallation', true] }
-                          ]
-                        },
-                        1,
-                        0
-                      ]
-                    }
-                  },
-                  totalDealValue: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $or: [
-                            { $in: ['$status', ['converted', 'closed']] },
-                            { $eq: ['$transferredToInstallation', true] }
-                          ]
-                        },
-                        { $ifNull: ['$dealValue', 0] },
-                        0
-                      ]
-                    }
-                  },
-                  totalIncentive: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $or: [
-                            { $in: ['$status', ['converted', 'closed']] },
-                            { $eq: ['$transferredToInstallation', true] }
-                          ]
-                        },
-                        {
-                          $cond: [
-                            { $gt: ['$telecallerIncentive', 0] },
-                            '$telecallerIncentive',
-                            {
-                              $cond: [
-                                { $gt: ['$dealValue', 0] },
-                                { $round: [{ $multiply: ['$dealValue', 0.05] }] },
-                                500
-                              ]
-                            }
-                          ]
-                        },
-                        0
-                      ]
-                    }
-                  },
-                  pendingFollowups: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $and: [
-                            { $ne: [{ $ifNull: ['$followUpDate', null] }, null] },
-                            { $not: { $in: ['$status', ['converted', 'closed']] } }
-                          ]
-                        },
-                        1,
-                        0
-                      ]
-                    }
-                  },
-                  todayFollowups: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $and: [
-                            { $ne: [{ $ifNull: ['$followUpDate', null] }, null] },
-                            { $not: { $in: ['$status', ['converted', 'closed']] } },
-                            { $gte: ['$followUpDate', startOfToday] },
-                            { $lte: ['$followUpDate', endOfToday] }
-                          ]
-                        },
-                        1,
-                        0
-                      ]
-                    }
-                  },
-                  overdueFollowups: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $and: [
-                            { $ne: [{ $ifNull: ['$followUpDate', null] }, null] },
-                            { $not: { $in: ['$status', ['converted', 'closed']] } },
-                            { $lt: ['$followUpDate', startOfToday] }
-                          ]
-                        },
-                        1,
-                        0
-                      ]
-                    }
-                  },
-                  upcomingFollowups: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $and: [
-                            { $ne: [{ $ifNull: ['$followUpDate', null] }, null] },
-                            { $not: { $in: ['$status', ['converted', 'closed']] } },
-                            { $gt: ['$followUpDate', endOfToday] }
-                          ]
-                        },
-                        1,
-                        0
-                      ]
-                    }
-                  },
-                  leadsFromCrmUser: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $or: [
-                            { $in: ['$assignedBy', validCrmAndAdminObjectIds] },
-                            { $in: ['$createdBy', validCrmAndAdminObjectIds] }
-                          ]
-                        },
-                        1,
-                        0
-                      ]
-                    }
-                  }
-                }
-              }
-            ],
-            statusBreakdown: [
-              { $group: { _id: { $ifNull: ['$status', 'new'] }, count: { $sum: 1 } } }
-            ],
-            branchBreakdown: [
-              {
-                $match: {
-                  $or: [
-                    { status: 'assigned_to_branch' },
-                    { assignedBranch: { $ne: null } }
-                  ]
-                }
-              },
-              {
-                $group: {
-                  _id: { $ifNull: ['$assignedBranch', 'unassigned'] },
-                  count: { $sum: 1 }
-                }
-              }
-            ],
-            cityBreakdown: [
-              { $match: { city: { $nin: ['', null] } } },
-              { $group: { _id: '$city', count: { $sum: 1 } } }
-            ],
-            stateBreakdown: [
-              { $match: { state: { $nin: ['', null] } } },
-              { $group: { _id: '$state', count: { $sum: 1 } } }
-            ],
-            telecallerMetrics: [
-              {
-                $project: {
-                  telecaller: { $ifNull: ['$originTelecaller', '$assignedTo'] },
-                  status: 1,
-                  assignedBranch: 1,
-                  dealValue: 1,
-                  telecallerIncentive: 1,
-                  transferredToInstallation: 1,
-                  followUpDate: 1
-                }
-              },
-              { $match: { telecaller: { $in: allTelecallerObjectIds } } },
-              {
-                $group: {
-                  _id: '$telecaller',
-                  totalLeads: { $sum: 1 },
-                  qualified: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $or: [
-                            { $eq: ['$status', 'assigned_to_branch'] },
-                            { $ne: [{ $ifNull: ['$assignedBranch', null] }, null] }
-                          ]
-                        },
-                        1,
-                        0
-                      ]
-                    }
-                  },
-                  converted: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $or: [
-                            { $in: ['$status', ['converted', 'closed']] },
-                            { $eq: ['$transferredToInstallation', true] }
-                          ]
-                        },
-                        1,
-                        0
-                      ]
-                    }
-                  },
-                  dealValue: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $or: [
-                            { $in: ['$status', ['converted', 'closed']] },
-                            { $eq: ['$transferredToInstallation', true] }
-                          ]
-                        },
-                        { $ifNull: ['$dealValue', 0] },
-                        0
-                      ]
-                    }
-                  },
-                  incentive: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $or: [
-                            { $in: ['$status', ['converted', 'closed']] },
-                            { $eq: ['$transferredToInstallation', true] }
-                          ]
-                        },
-                        {
-                          $cond: [
-                            { $gt: ['$telecallerIncentive', 0] },
-                            '$telecallerIncentive',
-                            {
-                              $cond: [
-                                { $gt: ['$dealValue', 0] },
-                                { $round: [{ $multiply: ['$dealValue', 0.05] }] },
-                                500
-                              ]
-                            }
-                          ]
-                        },
-                        0
-                      ]
-                    }
-                  },
-                  pendingFollowups: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $and: [
-                            { $ne: [{ $ifNull: ['$followUpDate', null] }, null] },
-                            { $not: { $in: ['$status', ['converted', 'closed']] } }
-                          ]
-                        },
-                        1,
-                        0
-                      ]
-                    }
-                  },
-                  overdueFollowups: {
-                    $sum: {
-                      $cond: [
-                        {
-                          $and: [
-                            { $ne: [{ $ifNull: ['$followUpDate', null] }, null] },
-                            { $not: { $in: ['$status', ['converted', 'closed']] } },
-                            { $lt: ['$followUpDate', startOfToday] }
-                          ]
-                        },
-                        1,
-                        0
-                      ]
-                    }
-                  }
-                }
-              }
+      // 1. Total Leads Assigned
+      Lead.countDocuments(assignedLeadsQuery),
+
+      // 2. Leads from CRM / Admin
+      Lead.countDocuments({
+        $and: [
+          assignedLeadsQuery,
+          {
+            $or: [
+              { assignedBy: { $in: validCrmAndAdminObjectIds } },
+              { createdBy: { $in: validCrmAndAdminObjectIds } }
             ]
+          }
+        ]
+      }),
+
+      // 3. Handed over to Sales
+      Lead.countDocuments(handoverQuery),
+
+      // 4. Converted summary (count, dealValue, incentive)
+      Lead.aggregate([
+        { $match: convertedQuery },
+        {
+          $group: {
+            _id: null,
+            count: { $sum: 1 },
+            dealValue: { $sum: { $ifNull: ['$dealValue', 0] } },
+            incentive: {
+              $sum: {
+                $cond: [
+                  { $gt: ['$telecallerIncentive', 0] },
+                  '$telecallerIncentive',
+                  {
+                    $cond: [
+                      { $gt: ['$dealValue', 0] },
+                      { $round: [{ $multiply: ['$dealValue', 0.05] }] },
+                      500
+                    ]
+                  }
+                ]
+              }
+            }
           }
         }
       ]),
 
-      // B. Remarks / Calls Count & per telecaller breakdown
+      // 5. Remarks / Calls Count & per telecaller breakdown
       Lead.aggregate([
-        { $match: query },
+        { $match: { 'remarks.addedBy': { $in: targetTelecallerIds }, ...commonFilters } },
         { $unwind: '$remarks' },
         {
           $match: {
-            $or: [
-              { 'remarks.addedBy': { $in: targetTelecallerIds } },
-              { 'remarks.note': { $regex: '\\[TELECALLER|\\[QUALIFIED', $options: 'i' } }
-            ],
+            'remarks.addedBy': { $in: targetTelecallerIds },
             ...(dateFilter ? { 'remarks.createdAt': dateFilter } : {})
           }
         },
@@ -1063,7 +852,7 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         }
       ]),
 
-      // C. Daily Calls (Last 7 Days)
+      // 6. Daily Calls (Last 7 Days)
       Lead.aggregate([
         { $match: { 'remarks.addedBy': { $in: targetTelecallerIds } } },
         { $unwind: '$remarks' },
@@ -1081,7 +870,7 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         }
       ]),
 
-      // D. Daily Qualified & Converted (Last 7 Days)
+      // 7. Daily Qualified & Converted (Last 7 Days)
       Lead.aggregate([
         {
           $match: {
@@ -1127,55 +916,265 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         }
       ]),
 
-      // E. Pending Calls per Telecaller
-      Lead.aggregate([
-        { $match: pendingCallsBaseQuery },
-        { $group: { _id: '$assignedTo', count: { $sum: 1 } } }
-      ]),
-
-      // F. Leads from CRM User per Telecaller
-      Lead.aggregate([
-        {
-          $match: {
-            assignedTo: { $in: allTelecallerObjectIds },
-            $or: [
-              { assignedBy: { $in: validCrmAndAdminObjectIds } },
-              { createdBy: { $in: validCrmAndAdminObjectIds } }
-            ],
-            ...(branchId && mongoose.Types.ObjectId.isValid(branchId) ? { assignedBranch: new mongoose.Types.ObjectId(branchId) } : {}),
-            ...(dateFilter ? { $or: [{ createdAt: dateFilter }, { assignedAt: dateFilter }] } : {})
-          }
-        },
-        { $group: { _id: '$assignedTo', count: { $sum: 1 } } }
-      ]),
-
-      // G. Total Pending Calls All
+      // 8. Total Pending Calls All (Backlog)
       Lead.countDocuments(pendingCallsBaseQuery),
 
-      // H. Pending Calls Today
+      // 9. Pending Calls Today
       Lead.countDocuments({
         ...pendingCallsBaseQuery,
         $or: [
           { createdAt: { $gte: startOfToday, $lte: endOfToday } },
           { assignedAt: { $gte: startOfToday, $lte: endOfToday } }
         ]
-      })
+      }),
+
+      // 10. Follow-up Pipeline Summary
+      Lead.aggregate([
+        { $match: followupBaseQuery },
+        {
+          $group: {
+            _id: null,
+            pendingFollowups: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: [{ $ifNull: ['$followUpDate', null] }, null] },
+                      { $not: { $in: ['$status', ['converted', 'closed']] } }
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            },
+            todayFollowups: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: [{ $ifNull: ['$followUpDate', null] }, null] },
+                      { $not: { $in: ['$status', ['converted', 'closed']] } },
+                      { $gte: ['$followUpDate', startOfToday] },
+                      { $lte: ['$followUpDate', endOfToday] }
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            },
+            overdueFollowups: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: [{ $ifNull: ['$followUpDate', null] }, null] },
+                      { $not: { $in: ['$status', ['converted', 'closed', 'assigned_to_branch']] } },
+                      { $lt: ['$followUpDate', startOfToday] }
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            },
+            upcomingFollowups: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: [{ $ifNull: ['$followUpDate', null] }, null] },
+                      { $not: { $in: ['$status', ['converted', 'closed']] } },
+                      { $gt: ['$followUpDate', endOfToday] }
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            }
+          }
+        }
+      ]),
+
+      // 11. Status breakdown (from assigned leads)
+      Lead.aggregate([
+        { $match: assignedLeadsQuery },
+        { $group: { _id: { $ifNull: ['$status', 'new'] }, count: { $sum: 1 } } }
+      ]),
+
+      // 12. Branch breakdown (from handed over leads)
+      Lead.aggregate([
+        { $match: handoverQuery },
+        { $group: { _id: { $ifNull: ['$assignedBranch', 'unassigned'] }, count: { $sum: 1 } } }
+      ]),
+
+      // 13. City breakdown (from assigned leads)
+      Lead.aggregate([
+        { $match: { ...assignedLeadsQuery, city: { $nin: ['', null] } } },
+        { $group: { _id: '$city', count: { $sum: 1 } } }
+      ]),
+
+      // 14. State breakdown (from assigned leads)
+      Lead.aggregate([
+        { $match: { ...assignedLeadsQuery, state: { $nin: ['', null] } } },
+        { $group: { _id: '$state', count: { $sum: 1 } } }
+      ]),
+
+      // 15. Leaderboard: assigned leads per telecaller
+      Lead.aggregate([
+        {
+          $match: {
+            $or: [
+              { assignedTo: { $in: allTelecallerObjectIds } },
+              { originTelecaller: { $in: allTelecallerObjectIds } }
+            ],
+            ...(assignDateCond ? assignDateCond : {}),
+            ...commonFilters
+          }
+        },
+        {
+          $project: {
+            telecaller: { $ifNull: ['$assignedTo', '$originTelecaller'] }
+          }
+        },
+        { $group: { _id: '$telecaller', count: { $sum: 1 } } }
+      ]),
+
+      // 16. Leaderboard: crm leads per telecaller
+      Lead.aggregate([
+        {
+          $match: {
+            $or: [
+              { assignedTo: { $in: allTelecallerObjectIds } },
+              { originTelecaller: { $in: allTelecallerObjectIds } }
+            ],
+            $or: [
+              { assignedBy: { $in: validCrmAndAdminObjectIds } },
+              { createdBy: { $in: validCrmAndAdminObjectIds } }
+            ],
+            ...(assignDateCond ? assignDateCond : {}),
+            ...commonFilters
+          }
+        },
+        {
+          $project: {
+            telecaller: { $ifNull: ['$assignedTo', '$originTelecaller'] }
+          }
+        },
+        { $group: { _id: '$telecaller', count: { $sum: 1 } } }
+      ]),
+
+      // 17. Leaderboard: qualified leads per telecaller
+      Lead.aggregate([
+        {
+          $match: {
+            $or: [
+              { assignedTo: { $in: allTelecallerObjectIds } },
+              { originTelecaller: { $in: allTelecallerObjectIds } }
+            ],
+            $or: [
+              { status: 'assigned_to_branch' },
+              { assignedBranch: { $ne: null } },
+              { branchOwner: { $ne: null } }
+            ],
+            ...(dateFilter ? {
+              $or: [
+                { updatedAt: dateFilter },
+                { 'remarks.createdAt': dateFilter }
+              ]
+            } : {}),
+            ...commonFilters
+          }
+        },
+        {
+          $project: {
+            telecaller: { $ifNull: ['$assignedTo', '$originTelecaller'] }
+          }
+        },
+        { $group: { _id: '$telecaller', count: { $sum: 1 } } }
+      ]),
+
+      // 18. Leaderboard: converted leads per telecaller
+      Lead.aggregate([
+        {
+          $match: {
+            $or: [
+              { assignedTo: { $in: allTelecallerObjectIds } },
+              { originTelecaller: { $in: allTelecallerObjectIds } }
+            ],
+            $or: [
+              { status: { $in: ['converted', 'closed'] } },
+              { transferredToInstallation: true }
+            ],
+            ...(dateFilter ? {
+              $or: [
+                { updatedAt: dateFilter },
+                { 'remarks.createdAt': dateFilter }
+              ]
+            } : {}),
+            ...commonFilters
+          }
+        },
+        {
+          $project: {
+            telecaller: { $ifNull: ['$assignedTo', '$originTelecaller'] },
+            dealValue: 1,
+            telecallerIncentive: 1
+          }
+        },
+        {
+          $group: {
+            _id: '$telecaller',
+            count: { $sum: 1 },
+            dealValue: { $sum: { $ifNull: ['$dealValue', 0] } },
+            incentive: {
+              $sum: {
+                $cond: [
+                  { $gt: ['$telecallerIncentive', 0] },
+                  '$telecallerIncentive',
+                  {
+                    $cond: [
+                      { $gt: ['$dealValue', 0] },
+                      { $round: [{ $multiply: ['$dealValue', 0.05] }] },
+                      500
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]),
+
+      // 19. Leaderboard: pending calls per telecaller
+      Lead.aggregate([
+        {
+          $match: {
+            assignedTo: { $in: allTelecallerObjectIds },
+            isCallDone: false,
+            status: { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] },
+            ...commonFilters
+          }
+        },
+        { $group: { _id: '$assignedTo', count: { $sum: 1 } } }
+      ])
     ]);
 
     // Format aggregate metrics
-    const rawSummary = mainAggResults[0]?.summary?.[0] || {};
-    const totalLeads = rawSummary.totalLeads || 0;
-    const qualifiedCount = rawSummary.qualifiedCount || 0;
-    const convertedCount = rawSummary.convertedCount || 0;
-    const totalDealValue = rawSummary.totalDealValue || 0;
-    const totalIncentive = rawSummary.totalIncentive || 0;
-    const pendingFollowups = rawSummary.pendingFollowups || 0;
-    const todayFollowups = rawSummary.todayFollowups || 0;
-    const overdueFollowups = rawSummary.overdueFollowups || 0;
-    const upcomingFollowups = rawSummary.upcomingFollowups || 0;
-    const leadsFromCrmUser = rawSummary.leadsFromCrmUser || 0;
-    const totalCalls = callsAggResults[0]?.totalCalls?.[0]?.count || 0;
+    const convData = convertedResults?.[0] || {};
+    const convertedCount = convData.count || 0;
+    const totalDealValue = convData.dealValue || 0;
+    const totalIncentive = convData.incentive || 0;
 
+    const followData = followupSummaryResults?.[0] || {};
+    const pendingFollowups = followData.pendingFollowups || 0;
+    const todayFollowups = followData.todayFollowups || 0;
+    const overdueFollowups = followData.overdueFollowups || 0;
+    const upcomingFollowups = followData.upcomingFollowups || 0;
+
+    const totalCalls = callsAggResults[0]?.totalCalls?.[0]?.count || 0;
     const pendingCallsPast = Math.max(0, totalPendingCallsAll - pendingCallsToday);
     const conversionRate = totalLeads > 0 ? ((convertedCount / totalLeads) * 100).toFixed(1) : '0.0';
     const qualificationRate = totalLeads > 0 ? ((qualifiedCount / totalLeads) * 100).toFixed(1) : '0.0';
@@ -1197,7 +1196,7 @@ export const getTelecallerAnalytics = async (req, res, next) => {
       call_done: 0,
       other: 0,
     };
-    (mainAggResults[0]?.statusBreakdown || []).forEach(item => {
+    (statusBreakdownResults || []).forEach(item => {
       const st = item._id;
       if (statusBreakdown[st] !== undefined) {
         statusBreakdown[st] = item.count;
@@ -1208,7 +1207,7 @@ export const getTelecallerAnalytics = async (req, res, next) => {
 
     // Branch breakdown
     const branchBreakdown = {};
-    (mainAggResults[0]?.branchBreakdown || []).forEach(item => {
+    (branchBreakdownResults || []).forEach(item => {
       const bId = item._id ? item._id.toString() : 'unassigned';
       const bName = branchMap.get(bId) || 'Unassigned Branch';
       branchBreakdown[bName] = (branchBreakdown[bName] || 0) + item.count;
@@ -1216,14 +1215,14 @@ export const getTelecallerAnalytics = async (req, res, next) => {
 
     // Location breakdowns
     const cityBreakdown = {};
-    (mainAggResults[0]?.cityBreakdown || []).forEach(item => {
+    (cityBreakdownResults || []).forEach(item => {
       if (item._id && item._id.trim()) {
         cityBreakdown[item._id.trim()] = item.count;
       }
     });
 
     const stateBreakdown = {};
-    (mainAggResults[0]?.stateBreakdown || []).forEach(item => {
+    (stateBreakdownResults || []).forEach(item => {
       if (item._id && item._id.trim()) {
         stateBreakdown[item._id.trim()] = item.count;
       }
@@ -1256,24 +1255,24 @@ export const getTelecallerAnalytics = async (req, res, next) => {
     }
 
     // 6. Leaderboard / Per-Telecaller Comparison
-    const telecallerMetricsMap = new Map((mainAggResults[0]?.telecallerMetrics || []).map(m => [m._id.toString(), m]));
-    const perTelecallerCallsMap = new Map((callsAggResults[0]?.perTelecallerCalls || []).map(c => [c._id.toString(), c.count]));
-    const pendingCountMap = new Map((pendingAgg || []).map(p => [p._id.toString(), p.count]));
-    const crmCountMap = new Map((crmAgg || []).map(c => [c._id.toString(), c.count]));
+    const assignedMap = new Map((leaderboardAssignedAgg || []).map(m => [m._id?.toString(), m.count]));
+    const crmMap = new Map((leaderboardCrmAgg || []).map(m => [m._id?.toString(), m.count]));
+    const handoverMap = new Map((leaderboardHandoverAgg || []).map(m => [m._id?.toString(), m.count]));
+    const convertedMap = new Map((leaderboardConvertedAgg || []).map(m => [m._id?.toString(), m]));
+    const perTelecallerCallsMap = new Map((callsAggResults[0]?.perTelecallerCalls || []).map(c => [c._id?.toString(), c.count]));
+    const pendingCountMap = new Map((leaderboardPendingAgg || []).map(p => [p._id?.toString(), p.count]));
 
     const leaderboard = allTelecallers.map(t => {
       const idStr = t._id.toString();
-      const metrics = telecallerMetricsMap.get(idStr) || {};
-      const tTotalLeads = metrics.totalLeads || 0;
-      const tConverted = metrics.converted || 0;
-      const tQualified = metrics.qualified || 0;
-      const tDealValue = metrics.dealValue || 0;
-      const tIncentive = metrics.incentive || 0;
-      const tPendingFollowups = metrics.pendingFollowups || 0;
-      const tOverdueFollowups = metrics.overdueFollowups || 0;
+      const tTotalLeads = assignedMap.get(idStr) || 0;
+      const conv = convertedMap.get(idStr) || {};
+      const tConverted = conv.count || 0;
+      const tQualified = handoverMap.get(idStr) || 0;
+      const tDealValue = conv.dealValue || 0;
+      const tIncentive = conv.incentive || 0;
       const tTotalCalls = perTelecallerCallsMap.get(idStr) || 0;
       const realPending = pendingCountMap.get(idStr) || 0;
-      const realFromCrm = crmCountMap.get(idStr) || 0;
+      const realFromCrm = crmMap.get(idStr) || 0;
       const rate = tTotalLeads > 0 ? ((tConverted / tTotalLeads) * 100).toFixed(1) : '0.0';
 
       return {
@@ -1291,8 +1290,8 @@ export const getTelecallerAnalytics = async (req, res, next) => {
         converted: tConverted,
         dealValue: tDealValue,
         incentive: tIncentive,
-        pendingFollowups: tPendingFollowups,
-        overdueFollowups: tOverdueFollowups,
+        pendingFollowups: 0,
+        overdueFollowups: 0,
         conversionRate: `${rate}%`
       };
     });
@@ -1437,46 +1436,25 @@ export const getTelecallerDrilldown = async (req, res, next) => {
 
     const andConditions = [];
 
-    // Base telecaller condition for general metrics
-    const telecallerBaseCond = isSingleTelecaller
-      ? {
-          $or: [
-            { assignedTo: targetTelecallerIds[0] },
-            { originTelecaller: targetTelecallerIds[0] },
-            { 'remarks.addedBy': targetTelecallerIds[0] }
-          ]
-        }
-      : {
-          $or: [
-            { assignedTo: { $in: targetTelecallerIds } },
-            { originTelecaller: { $in: targetTelecallerIds } },
-            { 'remarks.addedBy': { $in: targetTelecallerIds } },
-            { originTelecaller: { $ne: null } }
-          ]
-        };
+    // Telecaller Base Ownership Condition (assignedTo OR originTelecaller)
+    const telecallerAssignCond = isSingleTelecaller
+      ? { $or: [{ assignedTo: targetTelecallerIds[0] }, { originTelecaller: targetTelecallerIds[0] }] }
+      : { $or: [{ assignedTo: { $in: targetTelecallerIds } }, { originTelecaller: { $in: targetTelecallerIds } }] };
 
-    // Shared date condition matching getTelecallerAnalytics exactly
-    const dateOrCond = dateFilter
-      ? {
-          $or: [
-            { createdAt: dateFilter },
-            { assignedAt: dateFilter },
-            { reassignedAt: dateFilter },
-            { 'remarks.createdAt': dateFilter }
-          ]
-        }
+    // Date filter on lead assignment (created, assigned, or reassigned)
+    const assignDateCond = dateFilter
+      ? { $or: [{ assignedAt: dateFilter }, { createdAt: dateFilter }, { reassignedAt: dateFilter }] }
       : null;
 
     // Handle each metricType with precision matching analytics cards
     switch (metricType) {
       case 'pendingCalls': {
-        // Pending calls are leads currently assigned to telecaller awaiting calls (same as summary.pendingCalls)
+        // Pending calls are leads currently assigned to telecaller awaiting calls (same as summary.pendingCalls / Screening Queue)
         andConditions.push({
           assignedTo: isSingleTelecaller ? targetTelecallerIds[0] : { $in: targetTelecallerIds },
           isCallDone: false,
           status: { $nin: ['converted', 'closed', 'not_interested', 'invalid_number', 'disqualified'] }
         });
-        // Note: No date filter for current pending queue to match card
         break;
       }
 
@@ -1486,14 +1464,14 @@ export const getTelecallerDrilldown = async (req, res, next) => {
           Admin.find({}).select('_id').lean()
         ]);
         const cIds = [...crmUsersList.map(u => u._id), ...adminsList.map(a => a._id)];
-        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerAssignCond);
+        if (assignDateCond) andConditions.push(assignDateCond);
         andConditions.push({
           $or: [
             { assignedBy: { $in: cIds } },
             { createdBy: { $in: cIds } }
           ]
         });
-        if (dateOrCond) andConditions.push(dateOrCond);
         break;
       }
 
@@ -1514,32 +1492,46 @@ export const getTelecallerDrilldown = async (req, res, next) => {
 
       case 'qualified':
       case 'handedOver': {
-        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerAssignCond);
         andConditions.push({
           $or: [
             { status: 'assigned_to_branch' },
             { assignedBranch: { $ne: null } },
-            { 'remarks.note': { $regex: '\\[QUALIFIED\\]', $options: 'i' } }
+            { branchOwner: { $ne: null } }
           ]
         });
-        if (dateOrCond) andConditions.push(dateOrCond);
+        if (dateFilter) {
+          andConditions.push({
+            $or: [
+              { updatedAt: dateFilter },
+              { 'remarks.createdAt': dateFilter }
+            ]
+          });
+        }
         break;
       }
 
       case 'converted': {
-        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerAssignCond);
         andConditions.push({
           $or: [
             { status: { $in: ['converted', 'closed'] } },
             { transferredToInstallation: true }
           ]
         });
-        if (dateOrCond) andConditions.push(dateOrCond);
+        if (dateFilter) {
+          andConditions.push({
+            $or: [
+              { updatedAt: dateFilter },
+              { 'remarks.createdAt': dateFilter }
+            ]
+          });
+        }
         break;
       }
 
       case 'todayFollowups': {
-        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerAssignCond);
         andConditions.push({
           followUpDate: { $gte: startOfToday, $lte: endOfToday },
           status: { $nin: ['converted', 'closed'] }
@@ -1548,7 +1540,7 @@ export const getTelecallerDrilldown = async (req, res, next) => {
       }
 
       case 'overdueFollowups': {
-        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerAssignCond);
         andConditions.push({
           followUpDate: { $lt: startOfToday },
           status: { $nin: ['converted', 'closed', 'assigned_to_branch'] }
@@ -1557,7 +1549,7 @@ export const getTelecallerDrilldown = async (req, res, next) => {
       }
 
       case 'pendingFollowups': {
-        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerAssignCond);
         andConditions.push({
           followUpDate: { $ne: null },
           status: { $nin: ['converted', 'closed'] }
@@ -1566,18 +1558,18 @@ export const getTelecallerDrilldown = async (req, res, next) => {
       }
 
       case 'status': {
-        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerAssignCond);
         if (statusValue) {
           andConditions.push({ status: statusValue });
         }
-        if (dateOrCond) andConditions.push(dateOrCond);
+        if (assignDateCond) andConditions.push(assignDateCond);
         break;
       }
 
       case 'totalLeads':
       default: {
-        if (targetTelecallerIds.length > 0) andConditions.push(telecallerBaseCond);
-        if (dateOrCond) andConditions.push(dateOrCond);
+        if (targetTelecallerIds.length > 0) andConditions.push(telecallerAssignCond);
+        if (assignDateCond) andConditions.push(assignDateCond);
         break;
       }
     }
