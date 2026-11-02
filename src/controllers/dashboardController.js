@@ -1,3 +1,4 @@
+import * as XLSX from 'xlsx/xlsx.mjs';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
 import { Admin } from '../models/Admin.js';
@@ -251,7 +252,7 @@ export const getSalesRevenueAnalytics = async (req, res, next) => {
         month: month || null,
         search: search || '',
         page: page || 1,
-        limit: limit || 20
+        limit: limit ? parseInt(limit, 10) : (date || month ? 1000 : 20)
       });
     }
 
@@ -262,6 +263,73 @@ export const getSalesRevenueAnalytics = async (req, res, next) => {
         leads: leadDetails
       }
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const exportSalesRevenueExcel = async (req, res, next) => {
+  try {
+    const { date, month, search } = req.query;
+
+    let scopeQuery = {};
+    if (req.user?.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      scopeQuery.$or = [
+        { assignedTo: { $in: branchUserIds } },
+        { createdBy: { $in: branchUserIds } }
+      ];
+    }
+
+    const { leads } = await getApprovedSalesLeads({
+      scopeQuery,
+      date: date || null,
+      month: month || null,
+      search: search || '',
+      page: 1,
+      limit: 50000
+    });
+
+    const rows = leads.map((lead, idx) => ({
+      'S.No': idx + 1,
+      'Customer Name': lead.name || 'N/A',
+      'Phone': lead.phone || 'N/A',
+      'Email': lead.email || '',
+      'City': lead.city || '',
+      'State': lead.state || '',
+      'Sales Rep': lead.salesPersonName || 'Unassigned',
+      'Deal Value (₹)': lead.dealValue || 0,
+      'Amount Paid (₹)': lead.amountPaid || 0,
+      'Pending Amount (₹)': lead.pendingAmount || 0,
+      'Payment Status': (lead.paymentStatus || 'pending').toUpperCase(),
+      'Payment Mode': (lead.paymentMode || 'N/A').toUpperCase(),
+      'Verification Status': (lead.verificationStatus || 'verified').toUpperCase(),
+      'SuperAdmin Approval': (lead.transferApprovalStatus || 'approved').toUpperCase(),
+      'Sale / Approved Date': lead.effectiveDate
+        ? new Date(lead.effectiveDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+        : (lead.dateStr || 'N/A'),
+      'AWB Number': lead.awbNumber || ''
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    const sheetName = (month ? `Sales_${month}` : (date ? `Sales_${date}` : 'Approved_Sales')).replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 31);
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+    if (rows.length > 0) {
+      const maxVal = (arr) => arr.reduce((max, v) => (v && v.toString().length > max ? v.toString().length : max), 10);
+      worksheet['!cols'] = Object.keys(rows[0]).map((key) => ({
+        wch: Math.min(Math.max(key.length, maxVal(rows.map((r) => r[key] || ''))), 45) + 3
+      }));
+    }
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const filename = `Sales_Report_${month || date || 'All'}.xlsx`;
+
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return res.send(buffer);
   } catch (error) {
     next(error);
   }
