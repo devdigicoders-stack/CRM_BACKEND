@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -66,12 +67,18 @@ const statsKeyExists = (key, obj) => Object.prototype.hasOwnProperty.call(obj, k
 export const getAccountDashboard = async (req, res, next) => {
   try {
     const { date, startDate, endDate } = req.query;
-    const totalClosedWon = await Lead.countDocuments({ transferredToAccounts: true, status: { $in: ['converted', 'closed'] } });
-    const pendingVerification = await Lead.countDocuments({ transferredToAccounts: true, status: { $in: ['converted', 'closed'] }, verificationStatus: 'pending' });
-    const verifiedSales = await Lead.countDocuments({ transferredToAccounts: true, status: { $in: ['converted', 'closed'] }, verificationStatus: 'verified' });
+    const accountsMatch = {
+      $or: [
+        { transferredToAccounts: true },
+        { verificationStatus: { $in: ['pending', 'verified'] }, status: { $in: ['converted', 'closed', 'in_process'] } }
+      ]
+    };
+    const totalClosedWon = await Lead.countDocuments(accountsMatch);
+    const pendingVerification = await Lead.countDocuments({ ...accountsMatch, verificationStatus: 'pending' });
+    const verifiedSales = await Lead.countDocuments({ ...accountsMatch, verificationStatus: 'verified' });
     const rejectedSales = await Lead.countDocuments({ verificationStatus: 'rejected' });
     const paymentStatusBreakdown = await Lead.aggregate([
-      { $match: { transferredToAccounts: true, status: { $in: ['converted', 'closed'] } } },
+      { $match: accountsMatch },
       { $group: { _id: '$paymentStatus', count: { $sum: 1 } } }
     ]);
     const paymentStats = { pending: 0, partial: 0, completed: 0 };
@@ -195,39 +202,66 @@ export const getClosedWonLeads = async (req, res, next) => {
   try {
     const { search, verificationStatus, paymentStatus, assignedTo, startDate, endDate, page = 1, limit = 20 } = req.query;
     
-    // Base query logic: if rejected, it's no longer transferredToAccounts
-    const query = {};
+    const andConditions = [];
+
+    // Base query logic: if rejected, match rejected; otherwise match all valid accounts leads
     if (verificationStatus === 'rejected') {
-      query.verificationStatus = 'rejected';
+      andConditions.push({ verificationStatus: 'rejected' });
     } else {
-      query.transferredToAccounts = true;
-      query.status = { $in: ['converted', 'closed'] };
-      if (verificationStatus) query.verificationStatus = verificationStatus;
+      const baseOr = [
+        { transferredToAccounts: true },
+        { verificationStatus: { $in: ['pending', 'verified'] }, status: { $in: ['converted', 'closed', 'in_process'] } }
+      ];
+      if (verificationStatus) {
+        andConditions.push({ $or: baseOr, verificationStatus });
+      } else {
+        andConditions.push({ $or: baseOr });
+      }
     }
 
     if (assignedTo && assignedTo !== 'all') {
-      query.assignedTo = assignedTo;
+      andConditions.push({ assignedTo: new mongoose.Types.ObjectId(assignedTo) });
     }
 
+    // Date filter on effective sale date (saleConfirmedAt -> verifiedAt -> createdAt)
     if (startDate || endDate) {
-      query.createdAt = {};
+      const dateCondition = {};
       if (startDate) {
         const start = new Date(startDate);
         start.setHours(0, 0, 0, 0);
-        query.createdAt.$gte = start;
+        dateCondition.$gte = start;
       }
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-        query.createdAt.$lte = end;
+        dateCondition.$lte = end;
       }
+
+      andConditions.push({
+        $or: [
+          { saleConfirmedAt: dateCondition },
+          {
+            $and: [
+              { $or: [{ saleConfirmedAt: null }, { saleConfirmedAt: { $exists: false } }] },
+              { verifiedAt: dateCondition }
+            ]
+          },
+          {
+            $and: [
+              { $or: [{ saleConfirmedAt: null }, { saleConfirmedAt: { $exists: false } }] },
+              { $or: [{ verifiedAt: null }, { verifiedAt: { $exists: false } }] },
+              { createdAt: dateCondition }
+            ]
+          }
+        ]
+      });
     }
 
     if (search) {
       const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const cleanPhoneSearch = search.replace(/\D/g, '');
       
-      const orConditions = [
+      const searchOr = [
         { name: { $regex: escapedSearch, $options: 'i' } },
         { phone: { $regex: escapedSearch, $options: 'i' } },
         { email: { $regex: escapedSearch, $options: 'i' } },
@@ -237,17 +271,23 @@ export const getClosedWonLeads = async (req, res, next) => {
       if (cleanPhoneSearch.length >= 10) {
         const last10 = cleanPhoneSearch.slice(-10);
         const flexibleRegex = last10.split('').join('\\D*');
-        orConditions.push({ phone: { $regex: flexibleRegex, $options: 'i' } });
+        searchOr.push({ phone: { $regex: flexibleRegex, $options: 'i' } });
       } else if (cleanPhoneSearch.length > 0) {
         const flexibleRegex = cleanPhoneSearch.split('').join('\\D*');
-        orConditions.push({ phone: { $regex: flexibleRegex, $options: 'i' } });
+        searchOr.push({ phone: { $regex: flexibleRegex, $options: 'i' } });
       }
 
-      query.$or = orConditions;
+      andConditions.push({ $or: searchOr });
     }
-    if (paymentStatus) query.paymentStatus = paymentStatus;
+
+    if (paymentStatus) {
+      andConditions.push({ paymentStatus });
+    }
+
+    const query = andConditions.length > 0 ? { $and: andConditions } : {};
+
     const pageNum = parseInt(page, 10);
-    const limitNum = parseInt(limit, 10);
+    const limitNum = parseInt(limit, 10) || 50;
     const skipNum = (pageNum - 1) * limitNum;
     const total = await Lead.countDocuments(query);
     const leads = await Lead.find(query)
@@ -257,11 +297,56 @@ export const getClosedWonLeads = async (req, res, next) => {
       .populate('items.productId')
       .populate('items.warehouse', 'name code city')
       .populate('dispatchWarehouse', 'name code city address')
-      .sort({ createdAt: -1 })
+      .sort({ saleConfirmedAt: -1, createdAt: -1 })
       .skip(skipNum)
       .limit(limitNum)
       .lean();
-    res.status(200).json({ status: 'success', results: leads.length, total, pages: Math.ceil(total / limitNum), currentPage: pageNum, data: { leads: leads.map(formatLeadWithIntegrations) } });
+
+    // Summary calculation for exact totals
+    const summaryAgg = await Lead.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: null,
+          totalCount: { $sum: 1 },
+          totalDealValue: {
+            $sum: {
+              $cond: [
+                { $gt: ['$dealValue', 0] },
+                '$dealValue',
+                { $ifNull: ['$totalAmount', 0] }
+              ]
+            }
+          },
+          totalAmountPaid: {
+            $sum: {
+              $cond: [
+                { $gt: ['$amountPaid', 0] },
+                '$amountPaid',
+                { $ifNull: ['$bookingAmount', 0] }
+              ]
+            }
+          },
+          totalPendingAmount: { $sum: { $ifNull: ['$pendingAmount', 0] } }
+        }
+      }
+    ]);
+    const summary = summaryAgg[0] || {
+      totalCount: total,
+      totalDealValue: 0,
+      totalAmountPaid: 0,
+      totalPendingAmount: 0
+    };
+
+    res.status(200).json({
+      status: 'success',
+      results: leads.length,
+      total,
+      pages: Math.ceil(total / limitNum),
+      currentPage: pageNum,
+      summary,
+      data: { leads: leads.map(formatLeadWithIntegrations), summary }
+    });
   } catch (error) {
     next(error);
   }
