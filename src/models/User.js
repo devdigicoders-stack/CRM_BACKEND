@@ -82,4 +82,8 @@ userSchema.methods.changedPasswordAfter = function (JWTTimestamp) {
   return false;
 };
 
+userSchema.index({ role: 1, active: 1 });
+userSchema.index({ role: 1, name: 1 });
+userSchema.index({ active: 1, createdAt: -1 });
+
 export const User = mongoose.model('User', userSchema);

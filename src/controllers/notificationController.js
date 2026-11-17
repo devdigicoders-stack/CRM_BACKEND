@@ -53,28 +53,29 @@ export const generateMissedAlerts = async (userId, userRole) => {
       query.assignedTo = { $exists: true, $ne: null };
     }
 
-    const missedLeads = await Lead.find(query).lean();
+    const missedLeads = await Lead.find(query).limit(50).select('_id name phone followUpDate assignedTo').lean();
+    if (!missedLeads.length) return;
+
+    const leadIds = missedLeads.map(l => l._id);
+    const existingAlerts = await Notification.find({
+      recipient: userId,
+      lead: { $in: leadIds },
+      type: 'missed_followup',
+    }).select('lead').lean();
+
+    const existingLeadIdSet = new Set(existingAlerts.map(a => a.lead?.toString()));
 
     for (const lead of missedLeads) {
       const recipientId = ['superAdmin', 'admin'].includes(userRole) ? userId : lead.assignedTo;
+      if (!recipientId || existingLeadIdSet.has(lead._id.toString())) continue;
 
-      if (!recipientId) continue;
-
-      const alertExists = await Notification.findOne({
-        recipient: recipientId,
-        lead: lead._id,
+      await createNotificationAndSendPush({
+        title: '🚨 Missed Follow-up / Meeting',
+        message: `Missed follow-up for lead "${lead.name}" (${lead.phone}) scheduled on ${new Date(lead.followUpDate).toISOString().split('T')[0]}`,
+        recipientId,
+        leadId: lead._id,
         type: 'missed_followup',
       });
-
-      if (!alertExists) {
-        await createNotificationAndSendPush({
-          title: '🚨 Missed Follow-up / Meeting',
-          message: `Missed follow-up for lead "${lead.name}" (${lead.phone}) scheduled on ${new Date(lead.followUpDate).toISOString().split('T')[0]}`,
-          recipientId,
-          leadId: lead._id,
-          type: 'missed_followup',
-        });
-      }
     }
   } catch (error) {
     console.error('Error generating missed alerts:', error.message);
@@ -86,11 +87,17 @@ export const generateMissedAlerts = async (userId, userRole) => {
 // @access  Private
 export const getNotifications = async (req, res, next) => {
   try {
-    await generateMissedAlerts(req.user._id, req.user.role);
+    // Run missed alerts check in background without blocking response time
+    generateMissedAlerts(req.user._id, req.user.role).catch(err => {
+      console.error('Async generateMissedAlerts error:', err.message);
+    });
+
+    const limitNum = parseInt(req.query.limit, 10) || 50;
 
     const notifications = await Notification.find({ recipient: req.user._id })
       .populate('lead', 'name phone status')
       .sort({ createdAt: -1 })
+      .limit(limitNum)
       .lean();
 
     res.status(200).json({

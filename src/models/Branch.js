@@ -68,4 +68,8 @@ const branchSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+branchSchema.index({ pincodes: 1, active: 1 });
+branchSchema.index({ active: 1, name: 1 });
+branchSchema.index({ city: 1, state: 1 });
+
 export const Branch = mongoose.model('Branch', branchSchema);

@@ -442,7 +442,11 @@ const leadSchema = new mongoose.Schema(
 leadSchema.index({ name: 'text', phone: 'text', email: 'text' });
 
 // Performance optimization indexes
+leadSchema.index({ phone: 1 });
 leadSchema.index({ assignedTo: 1, status: 1 });
+leadSchema.index({ assignedTo: 1, createdAt: -1 });
+leadSchema.index({ status: 1, createdAt: -1 });
+leadSchema.index({ status: 1, assignedTo: 1, createdAt: -1 });
 leadSchema.index({ assignedTo: 1, isReassigned: 1 });
 leadSchema.index({ assignedTo: 1, isReassigned: 1, reassignedAt: -1 });
 leadSchema.index({ followUpDate: 1 });
@@ -452,9 +456,20 @@ leadSchema.index({ assignedTo: 1, assignedAt: -1 });
 leadSchema.index({ assignedBy: 1, assignedAt: -1 });
 leadSchema.index({ originTelecaller: 1, createdAt: -1 });
 leadSchema.index({ assignedBranch: 1, createdAt: -1 });
+leadSchema.index({ assignedBranch: 1, status: 1 });
 leadSchema.index({ assignedTo: 1, isCallDone: 1, status: 1 });
 leadSchema.index({ 'remarks.addedBy': 1, 'remarks.createdAt': -1 });
 leadSchema.index({ city: 1 });
 leadSchema.index({ state: 1 });
+leadSchema.index({ transferredToAccounts: 1, verificationStatus: 1 });
+leadSchema.index({ transferredToAccounts: 1, saleConfirmedAt: -1 });
+leadSchema.index({ verificationStatus: 1, transferApprovalStatus: 1 });
+leadSchema.index({ verificationStatus: 1, transferredToInstallation: 1 });
+leadSchema.index({ transferredToInstallation: 1, installationStatus: 1 });
+leadSchema.index({ saleConfirmedAt: -1 });
+leadSchema.index({ verifiedAt: -1 });
+leadSchema.index({ paymentStatus: 1 });
+leadSchema.index({ source: 1, createdAt: -1 });
+leadSchema.index({ priority: 1, createdAt: -1 });
 
 export const Lead = mongoose.model('Lead', leadSchema);

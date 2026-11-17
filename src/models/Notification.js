@@ -41,5 +41,8 @@ const notificationSchema = new mongoose.Schema(
 
 // Add index on recipient and read status for fast fetching
 notificationSchema.index({ recipient: 1, read: 1 });
+notificationSchema.index({ recipient: 1, createdAt: -1 });
+notificationSchema.index({ recipient: 1, read: 1, createdAt: -1 });
+notificationSchema.index({ createdAt: -1 });
 
 export const Notification = mongoose.model('Notification', notificationSchema);

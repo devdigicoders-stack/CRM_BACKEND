@@ -65,43 +65,117 @@ export const getDashboardStats = async (req, res, next) => {
       query.createdAt = { $gte: filterDateStart, $lte: filterDateEnd };
     }
 
-    // 1) Total Leads Count
-    const totalLeads = await Lead.countDocuments(query);
-
-    // 2) Assigned Leads Count
     const assignedLeadsQuery = { ...query };
     if (isAdmin) {
       assignedLeadsQuery.assignedTo = { $exists: true, $ne: null };
     } else {
       assignedLeadsQuery.assignedTo = req.user._id;
     }
-    const assignedLeads = await Lead.countDocuments(assignedLeadsQuery);
 
-    // 3) Today's Reminders Count
-    const todayReminders = await Lead.countDocuments({
-      ...query,
-      followUpDate: { $gte: startOfToday, $lte: endOfToday },
-    });
+    let salesScopeQuery = {};
+    if (req.user.role === 'branchManager') {
+      const { getBranchUserIds } = await import('../utils/branchHelper.js');
+      const branchUserIds = await getBranchUserIds(req.user._id);
+      salesScopeQuery.$or = [
+        { assignedTo: { $in: branchUserIds } },
+        { createdBy: { $in: branchUserIds } }
+      ];
+    }
 
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // Parallel execution of all dashboard metrics
+    const [
+      totalLeads,
+      assignedLeads,
+      todayReminders,
+      missedFollowUps,
+      statusBreakdown,
+      priorityBreakdown,
+      flowData,
+      salesRevenue
+    ] = await Promise.all([
+      // 1) Total Leads Count
+      Lead.countDocuments(query),
 
-    // 4) Missed Follow-ups Count
-    const missedFollowUps = await Lead.countDocuments({
-      ...query,
-      followUpDate: { $lt: oneDayAgo },
-      status: { $nin: ['converted', 'closed'] },
-    });
+      // 2) Assigned Leads Count
+      Lead.countDocuments(assignedLeadsQuery),
 
-    // 5) Breakdown by status
-    const statusBreakdown = await Lead.aggregate([
-      { $match: query },
-      { $group: { _id: '$status', count: { $sum: 1 } } },
-    ]);
+      // 3) Today's Reminders Count
+      Lead.countDocuments({
+        ...query,
+        followUpDate: { $gte: startOfToday, $lte: endOfToday },
+      }),
 
-    // 6) Breakdown by priority
-    const priorityBreakdown = await Lead.aggregate([
-      { $match: query },
-      { $group: { _id: '$priority', count: { $sum: 1 } } },
+      // 4) Missed Follow-ups Count
+      Lead.countDocuments({
+        ...query,
+        followUpDate: { $lt: oneDayAgo },
+        status: { $nin: ['converted', 'closed'] },
+      }),
+
+      // 5) Breakdown by status
+      Lead.aggregate([
+        { $match: query },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+
+      // 6) Breakdown by priority
+      Lead.aggregate([
+        { $match: query },
+        { $group: { _id: '$priority', count: { $sum: 1 } } },
+      ]),
+
+      // 7) Lead Flow Monitoring
+      Lead.aggregate([
+        { $match: query },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'assignedTo',
+            foreignField: '_id',
+            as: 'assigneeUser'
+          }
+        },
+        {
+          $lookup: {
+            from: 'admins',
+            localField: 'assignedTo',
+            foreignField: '_id',
+            as: 'assigneeAdmin'
+          }
+        },
+        {
+          $project: {
+            assignedTo: 1,
+            assignee: {
+              $concatArrays: ['$assigneeUser', '$assigneeAdmin']
+            }
+          }
+        },
+        {
+          $unwind: {
+            path: '$assignee',
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $group: {
+            _id: {
+              $cond: {
+                if: { $and: [{ $ifNull: ['$assignedTo', false] }, { $ne: ['$assignedTo', ''] }, { $ifNull: ['$assignee', false] }] },
+                then: '$assignee.role',
+                else: 'unassigned'
+              }
+            },
+            count: { $sum: 1 }
+          }
+        }
+      ]),
+
+      // 8) Real-time sales count & revenue
+      getSalesRevenueMetrics({
+        scopeQuery: salesScopeQuery,
+        date: date || null
+      })
     ]);
 
     // Format breakdown outputs
@@ -120,53 +194,6 @@ export const getDashboardStats = async (req, res, next) => {
 
     // Lead Flow Monitoring (Calling Team vs Sales Panel vs Branch/Admin vs Unassigned)
     let leadFlow = { callingTeam: 0, salesPanel: 0, branchTeam: 0, unassigned: 0 };
-    
-    const flowData = await Lead.aggregate([
-      { $match: query },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'assignedTo',
-          foreignField: '_id',
-          as: 'assigneeUser'
-        }
-      },
-      {
-        $lookup: {
-          from: 'admins',
-          localField: 'assignedTo',
-          foreignField: '_id',
-          as: 'assigneeAdmin'
-        }
-      },
-      {
-        $project: {
-          assignedTo: 1,
-          assignee: {
-            $concatArrays: ['$assigneeUser', '$assigneeAdmin']
-          }
-        }
-      },
-      {
-        $unwind: {
-          path: '$assignee',
-          preserveNullAndEmptyArrays: true
-        }
-      },
-      {
-        $group: {
-          _id: {
-            $cond: {
-              if: { $and: [{ $ifNull: ['$assignedTo', false] }, { $ne: ['$assignedTo', ''] }, { $ifNull: ['$assignee', false] }] },
-              then: '$assignee.role',
-              else: 'unassigned'
-            }
-          },
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
     flowData.forEach(item => {
       if (item._id === 'calling' || item._id === 'crmuser') {
         leadFlow.callingTeam += item.count;
@@ -177,21 +204,6 @@ export const getDashboardStats = async (req, res, next) => {
       } else {
         leadFlow.unassigned += item.count;
       }
-    });
-
-    // Real-time sales count & revenue (counted after accounts verification & super admin approval)
-    let salesScopeQuery = {};
-    if (req.user.role === 'branchManager') {
-      const { getBranchUserIds } = await import('../utils/branchHelper.js');
-      const branchUserIds = await getBranchUserIds(req.user._id);
-      salesScopeQuery.$or = [
-        { assignedTo: { $in: branchUserIds } },
-        { createdBy: { $in: branchUserIds } }
-      ];
-    }
-    const salesRevenue = await getSalesRevenueMetrics({
-      scopeQuery: salesScopeQuery,
-      date: date || null
     });
 
     res.status(200).json({

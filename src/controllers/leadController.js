@@ -463,8 +463,6 @@ export const getLeads = async (req, res, next) => {
 
     const pageNum = parseInt(page, 10) || 1;
 
-    // Get total count
-    const total = await Lead.countDocuments(query);
     const parsedLimit = limit !== undefined ? parseInt(limit, 10) : 100;
     const limitNum = !isNaN(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100;
     const skipNum = (pageNum - 1) * limitNum;
@@ -474,20 +472,24 @@ export const getLeads = async (req, res, next) => {
       ? { reassignedAt: -1, updatedAt: -1, createdAt: -1 }
       : { createdAt: -1 };
 
-    const leads = await Lead.find(query)
-      .populate('assignedTo', 'name email role phone')
-      .populate('createdBy', 'name email')
-      .populate('assignedBy', 'name email role')
-      .populate('assignedBranch', 'name code city state')
-      .populate('originTelecaller', 'name email role phone')
-      .populate('branchOwner', 'name email role phone')
-      .populate('remarks.addedBy', 'name email role')
-      .populate('productId')
-      .populate('items.productId')
-      .sort(sortField)
-      .skip(skipNum)
-      .limit(limitNum)
-      .lean();
+    // Parallel count & fetch query
+    const [total, leads] = await Promise.all([
+      Lead.countDocuments(query),
+      Lead.find(query)
+        .populate('assignedTo', 'name email role phone')
+        .populate('createdBy', 'name email')
+        .populate('assignedBy', 'name email role')
+        .populate('assignedBranch', 'name code city state')
+        .populate('originTelecaller', 'name email role phone')
+        .populate('branchOwner', 'name email role phone')
+        .populate('remarks.addedBy', 'name email role')
+        .populate('productId')
+        .populate('items.productId')
+        .sort(sortField)
+        .skip(skipNum)
+        .limit(limitNum)
+        .lean()
+    ]);
 
     const formattedLeads = leads.map(formatLeadWithIntegrations);
 
@@ -1942,15 +1944,17 @@ export const getScreeningQueue = async (req, res, next) => {
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    const leads = await Lead.find(query)
-      .populate('createdBy', 'name email')
-      .populate('assignedTo', 'name email role')
-      .populate('originTelecaller', 'name email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const total = await Lead.countDocuments(query);
+    const [leads, total] = await Promise.all([
+      Lead.find(query)
+        .populate('createdBy', 'name email')
+        .populate('assignedTo', 'name email role')
+        .populate('originTelecaller', 'name email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Lead.countDocuments(query)
+    ]);
 
     res.status(200).json({
       status: 'success',
