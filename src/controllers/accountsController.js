@@ -73,24 +73,33 @@ export const getAccountDashboard = async (req, res, next) => {
         { verificationStatus: { $in: ['pending', 'verified'] }, status: { $in: ['converted', 'closed', 'in_process'] } }
       ]
     };
-    const totalClosedWon = await Lead.countDocuments(accountsMatch);
-    const pendingVerification = await Lead.countDocuments({ ...accountsMatch, verificationStatus: 'pending' });
-    const verifiedSales = await Lead.countDocuments({ ...accountsMatch, verificationStatus: 'verified' });
-    const rejectedSales = await Lead.countDocuments({ verificationStatus: 'rejected' });
-    const paymentStatusBreakdown = await Lead.aggregate([
-      { $match: accountsMatch },
-      { $group: { _id: '$paymentStatus', count: { $sum: 1 } } }
+
+    const [
+      totalClosedWon,
+      pendingVerification,
+      verifiedSales,
+      rejectedSales,
+      paymentStatusBreakdown,
+      salesRevenue
+    ] = await Promise.all([
+      Lead.countDocuments(accountsMatch),
+      Lead.countDocuments({ ...accountsMatch, verificationStatus: 'pending' }),
+      Lead.countDocuments({ ...accountsMatch, verificationStatus: 'verified' }),
+      Lead.countDocuments({ verificationStatus: 'rejected' }),
+      Lead.aggregate([
+        { $match: accountsMatch },
+        { $group: { _id: '$paymentStatus', count: { $sum: 1 } } }
+      ]),
+      getSalesRevenueMetrics({
+        date: date || null,
+        startDate: startDate || null,
+        endDate: endDate || null
+      })
     ]);
+
     const paymentStats = { pending: 0, partial: 0, completed: 0 };
     paymentStatusBreakdown.forEach((item) => {
       if (item._id && statsKeyExists(item._id, paymentStats)) paymentStats[item._id] = item.count;
-    });
-
-    // Real-time sales count & revenue (counted after accounts verification & super admin approval)
-    const salesRevenue = await getSalesRevenueMetrics({
-      date: date || null,
-      startDate: startDate || null,
-      endDate: endDate || null
     });
 
     res.status(200).json({
@@ -289,47 +298,49 @@ export const getClosedWonLeads = async (req, res, next) => {
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10) || 50;
     const skipNum = (pageNum - 1) * limitNum;
-    const total = await Lead.countDocuments(query);
-    const leads = await Lead.find(query)
-      .populate('assignedTo', 'name email role phone')
-      .populate('remarks.addedBy', 'name email role')
-      .populate('productId')
-      .populate('items.productId')
-      .populate('items.warehouse', 'name code city')
-      .populate('dispatchWarehouse', 'name code city address')
-      .sort({ saleConfirmedAt: -1, createdAt: -1 })
-      .skip(skipNum)
-      .limit(limitNum)
-      .lean();
 
-    // Summary calculation for exact totals
-    const summaryAgg = await Lead.aggregate([
-      { $match: query },
-      {
-        $group: {
-          _id: null,
-          totalCount: { $sum: 1 },
-          totalDealValue: {
-            $sum: {
-              $cond: [
-                { $gt: ['$dealValue', 0] },
-                '$dealValue',
-                { $ifNull: ['$totalAmount', 0] }
-              ]
-            }
-          },
-          totalAmountPaid: {
-            $sum: {
-              $cond: [
-                { $gt: ['$amountPaid', 0] },
-                '$amountPaid',
-                { $ifNull: ['$bookingAmount', 0] }
-              ]
-            }
-          },
-          totalPendingAmount: { $sum: { $ifNull: ['$pendingAmount', 0] } }
+    // Execute count, leads fetch, and summary aggregation in parallel
+    const [total, leads, summaryAgg] = await Promise.all([
+      Lead.countDocuments(query),
+      Lead.find(query)
+        .populate('assignedTo', 'name email role phone')
+        .populate('remarks.addedBy', 'name email role')
+        .populate('productId', 'name sku modelNumber')
+        .populate('items.productId', 'name sku modelNumber')
+        .populate('items.warehouse', 'name code city')
+        .populate('dispatchWarehouse', 'name code city address')
+        .sort({ saleConfirmedAt: -1, createdAt: -1 })
+        .skip(skipNum)
+        .limit(limitNum)
+        .lean(),
+      Lead.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: null,
+            totalCount: { $sum: 1 },
+            totalDealValue: {
+              $sum: {
+                $cond: [
+                  { $gt: ['$dealValue', 0] },
+                  '$dealValue',
+                  { $ifNull: ['$totalAmount', 0] }
+                ]
+              }
+            },
+            totalAmountPaid: {
+              $sum: {
+                $cond: [
+                  { $gt: ['$amountPaid', 0] },
+                  '$amountPaid',
+                  { $ifNull: ['$bookingAmount', 0] }
+                ]
+              }
+            },
+            totalPendingAmount: { $sum: { $ifNull: ['$pendingAmount', 0] } }
+          }
         }
-      }
+      ])
     ]);
     const summary = summaryAgg[0] || {
       totalCount: total,
